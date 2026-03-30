@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Calendar - Manager Angajati{% endblock %}
+{% block extra_head %}
+<style>
+    .cal-table th, .cal-table td { font-size: 0.8rem; padding: 4px 6px; vertical-align: top; min-width: 120px; }
+    .cal-cell { border-radius: 4px; padding: 2px 4px; margin: 1px 0; font-size: 0.75rem; }
+    .cal-cell-hotel { background: rgba(43,87,154,0.1); border-left: 2px solid #2B579A; }
+    [data-bs-theme="dark"] .cal-cell-hotel { background: rgba(74,127,212,0.15); }
+    .cal-name { font-weight: 600; white-space: nowrap; position: sticky; left: 0; background: var(--bs-body-bg); z-index: 1; }
+    .week-nav a { text-decoration: none; font-size: 1.2rem; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-calendar-week"></i> Calendar Saptamanal</h2>
+    <div class="week-nav d-flex align-items-center gap-3">
+        <a href="?week_start={{ prev_week }}"><i class="bi bi-chevron-left"></i></a>
+        <strong>{{ week_start.strftime('%d.%m') }} - {{ week_end.strftime('%d.%m.%Y') }}</strong>
+        <a href="?week_start={{ next_week }}"><i class="bi bi-chevron-right"></i></a>
+        <a href="{{ url_for('calendar_view') }}" class="btn btn-sm btn-outline-secondary">Azi</a>
+    </div>
+</div>
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-bordered table-hover cal-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="cal-name">Angajat</th>
+                    {% for day in days %}
+                    <th class="text-center {{ 'table-warning' if day.weekday() >= 5 else '' }}">
+                        {{ ['Lun','Mar','Mie','Joi','Vin','Sam','Dum'][day.weekday()] }}<br>
+                        <small>{{ day.strftime('%d.%m') }}</small>
+                    </th>
+                    {% endfor %}
+                    <th class="text-center">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for ang in sorted_angajati %}
+            <tr>
+                <td class="cal-name"><a href="{{ url_for('profil_angajat', id=ang.id) }}" class="text-decoration-none">{{ ang.nume_complet }}</a></td>
+                {% set total_ore = namespace(val=0) %}
+                {% for day in days %}
+                <td>
+                    {% for entry in grid[ang.id][day] %}
+                    <div class="cal-cell cal-cell-hotel">
+                        <strong>{{ entry.hotel }}</strong><br>
+                        {{ entry.ore }}h
+                        {% if entry.firma %}<span class="badge bg-secondary" style="font-size:0.6rem">{{ entry.firma }}</span>{% endif %}
+                    </div>
+                    {% set total_ore.val = total_ore.val + entry.ore %}
+                    {% endfor %}
+                </td>
+                {% endfor %}
+                <td class="text-center fw-bold">{{ '%.1f'|format(total_ore.val) if total_ore.val else '' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ days|length + 2 }}" class="text-center text-muted p-3">Nicio inregistrare in aceasta saptamana.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

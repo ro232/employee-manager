@@ -58,6 +58,19 @@
         </div>
     </div>
 </div>
+{% if warnings is defined and warnings %}
+<div class="card mt-3 border-warning">
+    <div class="card-header bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Atentie - {{ warnings|length }} avertismente</div>
+    <div class="card-body p-0">
+        <ul class="list-group list-group-flush" style="max-height:200px;overflow-y:auto">
+            {% for w in warnings %}
+            <li class="list-group-item list-group-item-warning small"><i class="bi bi-exclamation-circle"></i> {{ w }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+
 <div class="mt-4">
     <form method="POST" action="{{ url_for('import_confirm') }}" class="d-inline">
         <button class="btn btn-primary btn-lg"><i class="bi bi-check-lg"></i> Confirma Importul</button>

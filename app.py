@@ -4,10 +4,11 @@ import shutil
 import difflib
 from datetime import date, datetime, timedelta
 from functools import wraps
+from collections import defaultdict
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, jsonify, send_file, session, g
+    flash, jsonify, send_file, session, g, abort
 )
 from flask_login import (
     LoginManager, login_user, logout_user, login_required, current_user
@@ -15,7 +16,7 @@ from flask_login import (
 from config import Config
 from models import (
     db, User, Angajat, Hotel, Pontaj, Firma, ContractAngajat,
-    AuditLog, Notification
+    AuditLog, Notification, DuplicateExclusion, Planificare
 )
 from import_excel import (
     parse_excel_file, import_entries, create_angajat_from_name,
@@ -23,6 +24,26 @@ from import_excel import (
 )
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+
+# ---------------------------------------------------------------------------
+# Role-based access decorator
+# ---------------------------------------------------------------------------
+def require_role(*allowed_roles):
+    """Decorator that checks current_user.role against allowed roles.
+    Usage:  @require_role("admin", "editor")
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if not current_user.is_authenticated:
+                return redirect(url_for("login"))
+            if current_user.role not in allowed_roles:
+                flash("Nu ai permisiunea necesara pentru aceasta actiune.", "danger")
+                return redirect(url_for("index"))
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
 
 
 def create_app():
@@ -72,10 +93,17 @@ def seed_default_data():
         db.session.add_all(firme)
         db.session.commit()
     if not User.query.first():
-        admin = User(username="admin", nume_complet="Administrator", is_admin=True)
+        admin = User(username="admin", nume_complet="Administrator",
+                     is_admin=True, role="admin")
         admin.set_password("admin")
         db.session.add(admin)
         db.session.commit()
+    else:
+        # Ensure existing admin user has role="admin"
+        admin_user = User.query.filter_by(username="admin").first()
+        if admin_user and admin_user.role != "admin":
+            admin_user.role = "admin"
+            db.session.commit()
 
 
 def log_audit(actiune, entitate, entitate_id=None, detalii=None):
@@ -264,6 +292,17 @@ def _filter_pontaje(form):
     return query.order_by(Pontaj.data, Angajat.nume_complet)
 
 
+def _get_excluded_pairs():
+    """Return a set of frozensets for excluded duplicate pairs."""
+    exclusions = DuplicateExclusion.query.all()
+    return {frozenset([e.angajat_id_1, e.angajat_id_2]) for e in exclusions}
+
+
+def _iso_week_start(d):
+    """Return Monday of the ISO week containing date d."""
+    return d - timedelta(days=d.weekday())
+
+
 def register_routes(app):
 
     # --- AUTH ---
@@ -300,26 +339,31 @@ def register_routes(app):
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
             nume = request.form.get("nume_complet", "").strip()
+            role = request.form.get("role", "editor")
+            # Only admins can set roles; non-admins default to editor
+            if not (current_user.is_authenticated and current_user.role == "admin"):
+                role = "editor"
+            if role not in ("admin", "editor", "viewer"):
+                role = "editor"
             if not username or not password:
                 flash("Completeaza toate campurile.", "danger")
                 return render_template("auth/register.html")
             if User.query.filter_by(username=username).first():
                 flash("Username-ul exista deja.", "danger")
                 return render_template("auth/register.html")
-            user = User(username=username, nume_complet=nume)
+            user = User(username=username, nume_complet=nume, role=role,
+                        is_admin=(role == "admin"))
             user.set_password(password)
             db.session.add(user)
             db.session.commit()
-            flash(f"Cont creat: {username}", "success")
+            flash(f"Cont creat: {username} (rol: {role})", "success")
             return redirect(url_for("lista_users") if current_user.is_authenticated else url_for("login"))
         return render_template("auth/register.html")
 
     @app.route("/users")
     @login_required
+    @require_role("admin")
     def lista_users():
-        if not current_user.is_admin:
-            flash("Acces restrictionat.", "danger")
-            return redirect(url_for("index"))
         users = User.query.order_by(User.username).all()
         return render_template("auth/users.html", users=users)
 
@@ -442,6 +486,7 @@ def register_routes(app):
 
     @app.route("/angajati/nou", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def angajat_nou():
         firme = Firma.query.order_by(Firma.nume).all()
         if request.method == "POST":
@@ -473,6 +518,7 @@ def register_routes(app):
 
     @app.route("/angajati/<int:id>/edit", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def edit_angajat(id):
         angajat = Angajat.query.get_or_404(id)
         firme = Firma.query.order_by(Firma.nume).all()
@@ -496,6 +542,7 @@ def register_routes(app):
 
     @app.route("/angajati/<int:id>/delete", methods=["POST"])
     @login_required
+    @require_role("admin", "editor")
     def delete_angajat(id):
         angajat = Angajat.query.get_or_404(id)
         angajat.activ = False
@@ -504,20 +551,86 @@ def register_routes(app):
         flash(f"Angajat {angajat.nume_complet} dezactivat.", "warning")
         return redirect(url_for("lista_angajati"))
 
-    # --- DUPLICATE DETECTION & MERGE ---
+    # -----------------------------------------------------------------------
+    # EMPLOYEE PROFILE (Feature 3)
+    # -----------------------------------------------------------------------
+    @app.route("/angajati/<int:id>/profil")
+    @login_required
+    def profil_angajat(id):
+        angajat = Angajat.query.get_or_404(id)
+        contracte = ContractAngajat.query.filter_by(angajat_id=angajat.id).all()
+
+        # Total hours per month (last 6 months) for chart
+        today = date.today()
+        monthly_hours = []
+        for i in range(5, -1, -1):
+            m = today.month - i
+            y = today.year
+            while m <= 0:
+                m += 12
+                y -= 1
+            start = date(y, m, 1)
+            if m == 12:
+                end = date(y + 1, 1, 1) - timedelta(days=1)
+            else:
+                end = date(y, m + 1, 1) - timedelta(days=1)
+            total = db.session.query(db.func.sum(Pontaj.ore)).filter(
+                Pontaj.angajat_id == angajat.id,
+                Pontaj.data >= start, Pontaj.data <= end
+            ).scalar() or 0
+            monthly_hours.append({
+                "label": f"{start.strftime('%b %Y')}",
+                "value": round(float(total), 1)
+            })
+
+        # Hotel breakdown (pie chart data)
+        hotel_breakdown = db.session.query(
+            Hotel.nume,
+            db.func.sum(Pontaj.ore).label("total_ore")
+        ).join(Pontaj).filter(
+            Pontaj.angajat_id == angajat.id
+        ).group_by(Hotel.nume).all()
+        hotel_data = [{"label": h[0], "value": round(float(h[1]), 1)} for h in hotel_breakdown]
+
+        # Paginated pontaj history
+        page = request.args.get("page", 1, type=int)
+        pontaje = (
+            Pontaj.query.filter_by(angajat_id=angajat.id)
+            .join(Hotel)
+            .order_by(Pontaj.data.desc())
+            .paginate(page=page, per_page=30, error_out=False)
+        )
+
+        return render_template(
+            "angajati/profil.html",
+            angajat=angajat,
+            contracte=contracte,
+            monthly_hours=monthly_hours,
+            hotel_data=hotel_data,
+            pontaje=pontaje,
+        )
+
+    # -----------------------------------------------------------------------
+    # DUPLICATE DETECTION & MERGE (updated with "Keep Both" - Feature 1)
+    # -----------------------------------------------------------------------
     @app.route("/angajati/duplicate")
     @login_required
     def detectare_duplicate():
         angajati = Angajat.query.filter_by(activ=True).order_by(Angajat.nume_complet).all()
+        excluded_pairs = _get_excluded_pairs()
         duplicates = []
         seen = set()
         for i, a1 in enumerate(angajati):
             for a2 in angajati[i + 1:]:
+                pair_key = tuple(sorted([a1.id, a2.id]))
+                pair_set = frozenset([a1.id, a2.id])
+                # Skip if already excluded
+                if pair_set in excluded_pairs:
+                    continue
                 ratio = difflib.SequenceMatcher(
                     None, a1.nume_complet.lower(), a2.nume_complet.lower()
                 ).ratio()
                 if ratio >= 0.75:
-                    pair_key = tuple(sorted([a1.id, a2.id]))
                     if pair_key not in seen:
                         seen.add(pair_key)
                         duplicates.append({
@@ -525,10 +638,12 @@ def register_routes(app):
                             "similarity": round(ratio * 100)
                         })
         duplicates.sort(key=lambda x: x["similarity"], reverse=True)
-        return render_template("angajati/duplicate.html", duplicates=duplicates)
+        excluded_count = DuplicateExclusion.query.count()
+        return render_template("angajati/duplicate.html", duplicates=duplicates, excluded_count=excluded_count)
 
     @app.route("/angajati/merge", methods=["POST"])
     @login_required
+    @require_role("admin", "editor")
     def merge_angajati():
         keep_id = int(request.form.get("keep_id"))
         remove_id = int(request.form.get("remove_id"))
@@ -561,6 +676,27 @@ def register_routes(app):
         flash(f"'{remove.nume_complet}' a fost unificat in '{keep.nume_complet}'.", "success")
         return redirect(url_for("detectare_duplicate"))
 
+    @app.route("/angajati/exclude-duplicate", methods=["POST"])
+    @login_required
+    @require_role("admin", "editor")
+    def exclude_duplicate():
+        """Mark two employees as NOT duplicates (keep both)."""
+        id1 = int(request.form.get("id1"))
+        id2 = int(request.form.get("id2"))
+        # Always store with smaller id first
+        a, b = min(id1, id2), max(id1, id2)
+        existing = DuplicateExclusion.query.filter_by(
+            angajat_id_1=a, angajat_id_2=b
+        ).first()
+        if not existing:
+            excl = DuplicateExclusion(angajat_id_1=a, angajat_id_2=b)
+            db.session.add(excl)
+            log_audit("EXCLUDE_DUP", "Angajat", a,
+                      f"Exclus din duplicate: {a} si {b}")
+            db.session.commit()
+        flash("Perechea a fost marcata ca non-duplicat.", "info")
+        return redirect(url_for("detectare_duplicate"))
+
     # --- FIRME ---
     @app.route("/firme")
     @login_required
@@ -570,6 +706,7 @@ def register_routes(app):
 
     @app.route("/firme/nou", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def firma_noua():
         if request.method == "POST":
             cod = request.form.get("cod", "").strip().upper()
@@ -587,6 +724,7 @@ def register_routes(app):
 
     @app.route("/firme/<int:id>/edit", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def edit_firma(id):
         firma = Firma.query.get_or_404(id)
         if request.method == "POST":
@@ -601,6 +739,7 @@ def register_routes(app):
     # --- IMPORT ---
     @app.route("/import", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def import_page():
         if request.method == "POST":
             file = request.files.get("file")
@@ -651,6 +790,7 @@ def register_routes(app):
 
     @app.route("/import/preview")
     @login_required
+    @require_role("admin", "editor")
     def import_preview():
         pending = session.get("pending_import", [])
         if not pending:
@@ -670,6 +810,31 @@ def register_routes(app):
                 if e["hotel"]:
                     hotels.add(e["hotel"])
 
+        # ---- Import Validation (Feature 4) ----
+        warnings = []
+        # Group entries by (name, date) for multi-hotel and >16h checks
+        by_name_date = defaultdict(list)
+        for p in pending:
+            for e in p["entries"]:
+                entry_date = e.get("date", "")
+                by_name_date[(e["name"], entry_date)].append(e)
+
+        for (name, entry_date), entries in by_name_date.items():
+            total_hours = sum(float(en.get("hours", 0) or 0) for en in entries)
+            if total_hours > 16:
+                warnings.append({
+                    "type": "high_hours",
+                    "message": f"{name} are {total_hours}h in data {entry_date} (>16h)",
+                    "name": name, "date": entry_date,
+                })
+            hotel_set = {en.get("hotel") for en in entries if en.get("hotel")}
+            if len(hotel_set) > 1:
+                warnings.append({
+                    "type": "multi_hotel",
+                    "message": f"{name} apare la {len(hotel_set)} hoteluri in {entry_date}: {', '.join(hotel_set)}",
+                    "name": name, "date": entry_date,
+                })
+
         return render_template(
             "import_preview.html",
             total_entries=total_entries,
@@ -678,10 +843,12 @@ def register_routes(app):
             names=sorted(names),
             hotels=sorted(hotels),
             periods=[p["week_period"] for p in pending],
+            warnings=warnings,
         )
 
     @app.route("/import/confirm", methods=["POST"])
     @login_required
+    @require_role("admin", "editor")
     def import_confirm():
         pending = session.pop("pending_import", [])
         if not pending:
@@ -713,6 +880,7 @@ def register_routes(app):
 
     @app.route("/import/angajati-noi", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def register_new_employees():
         new_employees = session.get("new_employees", [])
         firme = Firma.query.order_by(Firma.nume).all()
@@ -720,16 +888,36 @@ def register_routes(app):
             flash("Nu exista angajati noi.", "info")
             return redirect(url_for("import_page"))
 
-        # Find similar names
+        # Find similar names for duplicate warning
         similar_map = {}
         for name in new_employees:
             similar = find_similar_names(name)
             if similar:
                 similar_map[name] = similar
 
+        # Feature 6: Fuzzy auto-correct - find names > 85% similar for dropdown
+        fuzzy_map = {}
+        for name in new_employees:
+            matches = find_similar_names(name, threshold=0.85)
+            if matches:
+                fuzzy_map[name] = matches
+
         if request.method == "POST":
+            mapped_count = 0
+            created_count = 0
             for name in new_employees:
                 safe_name = name.replace(" ", "_")
+                # Check if user chose to map to existing employee
+                map_to = request.form.get(f"map_to_{safe_name}", "")
+                if map_to and map_to != "new":
+                    # User chose to map this name to an existing employee
+                    mapped_count += 1
+                    # Store the mapping in session so import_entries can use it
+                    mappings = session.get("name_mappings", {})
+                    mappings[name] = int(map_to)
+                    session["name_mappings"] = mappings
+                    continue
+
                 cnp = request.form.get(f"cnp_{safe_name}", "").strip() or None
                 adresa = request.form.get(f"adresa_{safe_name}", "").strip() or None
                 telefon = request.form.get(f"telefon_{safe_name}", "").strip() or None
@@ -741,6 +929,7 @@ def register_routes(app):
                 angajat.cnp = cnp
                 angajat.adresa = adresa
                 angajat.telefon = telefon
+                created_count += 1
 
                 if firma_id:
                     contract = ContractAngajat(
@@ -750,9 +939,12 @@ def register_routes(app):
                     contract.genereaza_cod()
                     db.session.add(contract)
 
-            log_audit("CREATE", "Angajat", None, f"Angajati noi din import: {len(new_employees)}")
+            details = f"Angajati noi din import: {created_count} creati"
+            if mapped_count:
+                details += f", {mapped_count} mapati la existenti"
+            log_audit("CREATE", "Angajat", None, details)
             add_notification(
-                f"{len(new_employees)} angajati noi detectati la import",
+                f"{created_count} angajati noi detectati la import",
                 tip="warning", link=url_for("lista_angajati")
             )
             db.session.commit()
@@ -761,7 +953,8 @@ def register_routes(app):
 
         return render_template(
             "import_angajati_noi.html",
-            new_employees=new_employees, firme=firme, similar_map=similar_map,
+            new_employees=new_employees, firme=firme,
+            similar_map=similar_map, fuzzy_map=fuzzy_map,
         )
 
     # --- PONTAJ ---
@@ -778,6 +971,7 @@ def register_routes(app):
 
     @app.route("/pontaj/nou", methods=["GET", "POST"])
     @login_required
+    @require_role("admin", "editor")
     def pontaj_nou():
         angajati = Angajat.query.filter_by(activ=True).order_by(Angajat.nume_complet).all()
         hoteluri = Hotel.query.order_by(Hotel.nume).all()
@@ -1013,13 +1207,329 @@ def register_routes(app):
 
         return render_template("rapoarte/comparatie.html", angajati=angajati, result=result)
 
+    # -----------------------------------------------------------------------
+    # OVERTIME REPORT (Feature 7)
+    # -----------------------------------------------------------------------
+    @app.route("/rapoarte/ore-suplimentare", methods=["GET", "POST"])
+    @login_required
+    def overtime_report():
+        angajati_list = Angajat.query.filter_by(activ=True).order_by(Angajat.nume_complet).all()
+        result = None
+        filters = {}
+
+        if request.method == "POST":
+            data_start = request.form.get("data_start", "")
+            data_end = request.form.get("data_end", "")
+            mode = request.form.get("mode", "monthly")  # weekly or monthly
+            threshold = float(request.form.get("threshold", 160 if mode == "monthly" else 40))
+            filters = {
+                "data_start": data_start,
+                "data_end": data_end,
+                "mode": mode,
+                "threshold": threshold,
+            }
+
+            q = db.session.query(Pontaj).join(Angajat).filter(Angajat.activ == True)
+            if data_start:
+                q = q.filter(Pontaj.data >= date.fromisoformat(data_start))
+            if data_end:
+                q = q.filter(Pontaj.data <= date.fromisoformat(data_end))
+            pontaje = q.all()
+
+            # Group by employee and period
+            emp_periods = defaultdict(lambda: defaultdict(float))
+            for p in pontaje:
+                if mode == "weekly":
+                    # ISO week key
+                    iso_year, iso_week, _ = p.data.isocalendar()
+                    period_key = f"{iso_year}-W{iso_week:02d}"
+                else:
+                    period_key = p.data.strftime("%Y-%m")
+                emp_periods[p.angajat_id][period_key] += p.ore
+
+            overtime_data = []
+            for ang_id, periods in emp_periods.items():
+                ang = Angajat.query.get(ang_id)
+                for period, total_ore in sorted(periods.items()):
+                    if total_ore > threshold:
+                        overtime_data.append({
+                            "angajat": ang.nume_complet,
+                            "angajat_id": ang.id,
+                            "period": period,
+                            "total_ore": round(total_ore, 1),
+                            "surplus": round(total_ore - threshold, 1),
+                            "exceeded": True,
+                        })
+
+            overtime_data.sort(key=lambda x: x["surplus"], reverse=True)
+            result = overtime_data
+
+        return render_template(
+            "rapoarte/ore_suplimentare.html",
+            angajati=angajati_list,
+            result=result,
+            filters=filters,
+        )
+
+    # -----------------------------------------------------------------------
+    # CALENDAR VIEW (Feature 2)
+    # -----------------------------------------------------------------------
+    @app.route("/calendar")
+    @login_required
+    def calendar_view():
+        # Determine week start (Monday) from query param or default to current week
+        week_start_str = request.args.get("week_start", "")
+        if week_start_str:
+            try:
+                week_start = date.fromisoformat(week_start_str)
+                # Snap to Monday
+                week_start = _iso_week_start(week_start)
+            except ValueError:
+                week_start = _iso_week_start(date.today())
+        else:
+            week_start = _iso_week_start(date.today())
+
+        week_end = week_start + timedelta(days=6)
+        days = [week_start + timedelta(days=i) for i in range(7)]
+
+        # Get all pontaje for this week
+        pontaje = (
+            Pontaj.query.join(Angajat).join(Hotel)
+            .filter(Pontaj.data >= week_start, Pontaj.data <= week_end)
+            .order_by(Angajat.nume_complet, Pontaj.data)
+            .all()
+        )
+
+        # Build grid: {angajat_id: {date: [{hotel, ore}]}}
+        grid = defaultdict(lambda: defaultdict(list))
+        angajati_in_week = {}
+        for p in pontaje:
+            grid[p.angajat_id][p.data].append({
+                "hotel": p.hotel.nume,
+                "ore": p.ore,
+                "firma": p.firma_cod or "",
+            })
+            angajati_in_week[p.angajat_id] = p.angajat
+
+        # Sort employees by name
+        sorted_angajati = sorted(angajati_in_week.values(), key=lambda a: a.nume_complet)
+
+        prev_week = (week_start - timedelta(days=7)).isoformat()
+        next_week = (week_start + timedelta(days=7)).isoformat()
+
+        return render_template(
+            "calendar.html",
+            week_start=week_start,
+            week_end=week_end,
+            days=days,
+            grid=grid,
+            sorted_angajati=sorted_angajati,
+            prev_week=prev_week,
+            next_week=next_week,
+        )
+
+    # -----------------------------------------------------------------------
+    # PER-HOTEL DASHBOARD (Feature 8)
+    # -----------------------------------------------------------------------
+    @app.route("/hotel/<int:id>")
+    @login_required
+    def hotel_dashboard(id):
+        hotel = Hotel.query.get_or_404(id)
+
+        # Total hours at this hotel
+        total_ore = db.session.query(db.func.sum(Pontaj.ore)).filter(
+            Pontaj.hotel_id == hotel.id
+        ).scalar() or 0
+
+        # Number of unique employees
+        total_angajati = db.session.query(
+            db.func.count(db.distinct(Pontaj.angajat_id))
+        ).filter(Pontaj.hotel_id == hotel.id).scalar() or 0
+
+        # Total days worked
+        total_zile = db.session.query(db.func.count(Pontaj.id)).filter(
+            Pontaj.hotel_id == hotel.id
+        ).scalar() or 0
+
+        # Employees who worked here with hours breakdown
+        emp_data = db.session.query(
+            Angajat.id,
+            Angajat.nume_complet,
+            db.func.sum(Pontaj.ore).label("total_ore"),
+            db.func.count(Pontaj.id).label("zile"),
+        ).join(Pontaj).filter(
+            Pontaj.hotel_id == hotel.id
+        ).group_by(Angajat.id, Angajat.nume_complet).order_by(
+            db.func.sum(Pontaj.ore).desc()
+        ).all()
+
+        employees = [{
+            "id": e[0], "nume": e[1],
+            "ore": round(float(e[2]), 1), "zile": e[3]
+        } for e in emp_data]
+
+        # Monthly breakdown for chart
+        monthly = db.session.query(
+            db.func.strftime("%Y-%m", Pontaj.data).label("luna"),
+            db.func.sum(Pontaj.ore).label("ore"),
+        ).filter(
+            Pontaj.hotel_id == hotel.id
+        ).group_by("luna").order_by("luna").all()
+        chart_data = [{"label": m[0], "value": round(float(m[1]), 1)} for m in monthly]
+
+        # Recent pontaje
+        recent = (
+            Pontaj.query.filter_by(hotel_id=hotel.id)
+            .join(Angajat).order_by(Pontaj.data.desc()).limit(20).all()
+        )
+
+        return render_template(
+            "hotel_dashboard.html",
+            hotel=hotel,
+            total_ore=round(float(total_ore), 1),
+            total_angajati=total_angajati,
+            total_zile=total_zile,
+            employees=employees,
+            chart_data=chart_data,
+            recent=recent,
+        )
+
+    @app.route("/hotel/<int:id>/export-excel")
+    @login_required
+    def hotel_export_excel(id):
+        hotel = Hotel.query.get_or_404(id)
+        pontaje = (
+            Pontaj.query.filter_by(hotel_id=hotel.id)
+            .join(Angajat).order_by(Pontaj.data, Angajat.nume_complet).all()
+        )
+        filters = {"hotel_id": str(hotel.id)}
+        wb = build_excel_report(pontaje, filters, "detaliat")
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        log_audit("EXPORT", "Hotel", hotel.id, f"Export Excel hotel: {hotel.nume}")
+        db.session.commit()
+        safe_name = hotel.nume.replace(" ", "_")
+        return send_file(
+            output, as_attachment=True,
+            download_name=f"hotel_{safe_name}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    # -----------------------------------------------------------------------
+    # PLANIFICARE / SCHEDULING (Feature 9)
+    # -----------------------------------------------------------------------
+    @app.route("/planificare", methods=["GET", "POST"])
+    @login_required
+    def planificare():
+        week_start_str = request.args.get("week_start", "")
+        if week_start_str:
+            try:
+                week_start = date.fromisoformat(week_start_str)
+                week_start = _iso_week_start(week_start)
+            except ValueError:
+                week_start = _iso_week_start(date.today())
+        else:
+            week_start = _iso_week_start(date.today())
+
+        week_end = week_start + timedelta(days=6)
+        days = [week_start + timedelta(days=i) for i in range(7)]
+
+        angajati = Angajat.query.filter_by(activ=True).order_by(Angajat.nume_complet).all()
+        hoteluri = Hotel.query.order_by(Hotel.nume).all()
+        firme = Firma.query.order_by(Firma.nume).all()
+
+        # Get planned shifts for this week
+        planificari = Planificare.query.filter(
+            Planificare.data >= week_start,
+            Planificare.data <= week_end,
+        ).all()
+
+        # Build plan grid: {angajat_id: {date: [{hotel, ore, nota}]}}
+        plan_grid = defaultdict(lambda: defaultdict(list))
+        for pl in planificari:
+            plan_grid[pl.angajat_id][pl.data].append({
+                "id": pl.id,
+                "hotel": pl.hotel.nume,
+                "hotel_id": pl.hotel_id,
+                "ore": pl.ore_planificate,
+                "nota": pl.nota or "",
+                "firma": pl.firma_cod or "",
+            })
+
+        # Get actual pontaj for comparison
+        pontaje = Pontaj.query.filter(
+            Pontaj.data >= week_start, Pontaj.data <= week_end
+        ).all()
+        actual_grid = defaultdict(lambda: defaultdict(float))
+        for p in pontaje:
+            actual_grid[p.angajat_id][p.data] += p.ore
+
+        prev_week = (week_start - timedelta(days=7)).isoformat()
+        next_week = (week_start + timedelta(days=7)).isoformat()
+
+        return render_template(
+            "planificare.html",
+            week_start=week_start,
+            week_end=week_end,
+            days=days,
+            angajati=angajati,
+            hoteluri=hoteluri,
+            firme=firme,
+            plan_grid=plan_grid,
+            actual_grid=actual_grid,
+            prev_week=prev_week,
+            next_week=next_week,
+        )
+
+    @app.route("/planificare/adauga", methods=["POST"])
+    @login_required
+    @require_role("admin", "editor")
+    def planificare_adauga():
+        angajat_id = request.form.get("angajat_id")
+        hotel_id = request.form.get("hotel_id")
+        data_str = request.form.get("data")
+        ore = request.form.get("ore", "8")
+        firma_cod = request.form.get("firma_cod", "")
+        nota = request.form.get("nota", "").strip()
+        week_start = request.form.get("week_start", "")
+
+        if not all([angajat_id, hotel_id, data_str]):
+            flash("Completeaza angajat, hotel si data.", "danger")
+            return redirect(url_for("planificare", week_start=week_start))
+
+        plan = Planificare(
+            angajat_id=int(angajat_id),
+            hotel_id=int(hotel_id),
+            data=date.fromisoformat(data_str),
+            ore_planificate=float(ore),
+            firma_cod=firma_cod or None,
+            nota=nota or None,
+        )
+        db.session.add(plan)
+        log_audit("CREATE", "Planificare", None,
+                  f"Planificare: {data_str} angajat={angajat_id}")
+        db.session.commit()
+        flash("Schimb planificat adaugat.", "success")
+        return redirect(url_for("planificare", week_start=week_start))
+
+    @app.route("/planificare/<int:id>/delete", methods=["POST"])
+    @login_required
+    @require_role("admin", "editor")
+    def planificare_delete(id):
+        plan = Planificare.query.get_or_404(id)
+        week_start = request.form.get("week_start", "")
+        db.session.delete(plan)
+        log_audit("DELETE", "Planificare", id, "Planificare stearsa")
+        db.session.commit()
+        flash("Schimb planificat sters.", "info")
+        return redirect(url_for("planificare", week_start=week_start))
+
     # --- AUDIT LOG ---
     @app.route("/audit")
     @login_required
+    @require_role("admin")
     def audit_log():
-        if not current_user.is_admin:
-            flash("Acces restrictionat.", "danger")
-            return redirect(url_for("index"))
         page = request.args.get("page", 1, type=int)
         logs = AuditLog.query.order_by(AuditLog.created_at.desc()).paginate(
             page=page, per_page=50, error_out=False
@@ -1029,10 +1539,8 @@ def register_routes(app):
     # --- BACKUP ---
     @app.route("/backup", methods=["POST"])
     @login_required
+    @require_role("admin")
     def create_backup():
-        if not current_user.is_admin:
-            flash("Acces restrictionat.", "danger")
-            return redirect(url_for("index"))
         db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
         if not os.path.exists(db_path):
             flash("Backup disponibil doar cu SQLite.", "warning")
@@ -1048,10 +1556,8 @@ def register_routes(app):
 
     @app.route("/backup/download")
     @login_required
+    @require_role("admin")
     def download_backup():
-        if not current_user.is_admin:
-            flash("Acces restrictionat.", "danger")
-            return redirect(url_for("index"))
         db_path = app.config["SQLALCHEMY_DATABASE_URI"].replace("sqlite:///", "")
         if os.path.exists(db_path):
             return send_file(db_path, as_attachment=True,

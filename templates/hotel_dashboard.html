@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ hotel.nume }} - Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-building"></i> {{ hotel.nume }}</h2>
+    <a href="{{ url_for('hotel_export_excel', id=hotel.id) }}" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Export Excel</a>
+</div>
+<div class="row g-3 mb-3">
+    <div class="col-md-3"><div class="stat-card p-3"><div class="text-muted small">Total Ore</div><div class="number">{{ total_ore }}</div></div></div>
+    <div class="col-md-3"><div class="stat-card p-3" style="border-left-color:#28a745"><div class="text-muted small">Angajati</div><div class="number" style="color:#28a745">{{ total_angajati }}</div></div></div>
+    <div class="col-md-3"><div class="stat-card p-3" style="border-left-color:#ffc107"><div class="text-muted small">Zile Acoperite</div><div class="number" style="color:#ffc107">{{ total_zile }}</div></div></div>
+    <div class="col-md-3"><div class="stat-card p-3" style="border-left-color:#dc3545"><div class="text-muted small">Media Ore/Zi</div><div class="number" style="color:#dc3545">{{ '%.1f'|format(total_ore / total_zile) if total_zile else '0' }}</div></div></div>
+</div>
+<div class="row g-3 mb-3">
+    <div class="col-md-8">
+        <div class="card"><div class="card-header">Ore pe Luna</div><div class="card-body"><canvas id="monthChart" height="180"></canvas></div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Top Angajati (ore)</div>
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                    {% for e in employees[:10] %}
+                    <tr><td><a href="{{ url_for('profil_angajat', id=e.id) }}">{{ e.nume }}</a></td><td class="fw-bold">{{ e.ore }}h</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="card">
+    <div class="card-header">Ultimele Pontaje</div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Data</th><th>Angajat</th><th>Firma</th><th>Ore</th></tr></thead>
+            <tbody>
+            {% for p in recent %}
+            <tr><td>{{ p.data.strftime('%d.%m.%Y') }}</td><td>{{ p.angajat.nume_complet }}</td><td>{{ p.firma_cod or '-' }}</td><td>{{ p.ore }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+const d = {{ chart_data | tojson }};
+if(d.length) new Chart(document.getElementById('monthChart'), {
+    type:'bar', data:{labels:d.map(x=>x.label), datasets:[{label:'Ore', data:d.map(x=>x.value), backgroundColor:'rgba(43,87,154,0.7)', borderRadius:4}]},
+    options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
+});
+</script>
+{% endblock %}

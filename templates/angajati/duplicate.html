@@ -8,18 +8,18 @@
 <div class="card mb-3">
     <div class="card-body">
         <div class="row align-items-center">
-            <div class="col-md-4">
-                <h6>{{ d.a1.nume_complet }}</h6>
+            <div class="col-md-3">
+                <h6><a href="{{ url_for('profil_angajat', id=d.a1.id) }}">{{ d.a1.nume_complet }}</a></h6>
                 <small class="text-muted">ID: {{ d.a1.id }} | Pontaje: {{ d.a1.pontaje|length }}</small>
             </div>
             <div class="col-md-1 text-center">
                 <span class="badge bg-warning text-dark fs-6">{{ d.similarity }}%</span>
             </div>
-            <div class="col-md-4">
-                <h6>{{ d.a2.nume_complet }}</h6>
+            <div class="col-md-3">
+                <h6><a href="{{ url_for('profil_angajat', id=d.a2.id) }}">{{ d.a2.nume_complet }}</a></h6>
                 <small class="text-muted">ID: {{ d.a2.id }} | Pontaje: {{ d.a2.pontaje|length }}</small>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-5 d-flex gap-1 flex-wrap">
                 <form method="POST" action="{{ url_for('merge_angajati') }}" class="d-inline"
                       onsubmit="return confirm('Unifici {{ d.a2.nume_complet }} in {{ d.a1.nume_complet }}?')">
                     <input type="hidden" name="keep_id" value="{{ d.a1.id }}">
@@ -36,6 +36,13 @@
                         Pastreaza dreapta <i class="bi bi-arrow-right"></i>
                     </button>
                 </form>
+                <form method="POST" action="{{ url_for('exclude_duplicate') }}" class="d-inline">
+                    <input type="hidden" name="id1" value="{{ d.a1.id }}">
+                    <input type="hidden" name="id2" value="{{ d.a2.id }}">
+                    <button class="btn btn-sm btn-outline-success" title="Ambele sunt corecte, nu sunt duplicate">
+                        <i class="bi bi-check2-all"></i> Pastreaza ambele
+                    </button>
+                </form>
             </div>
         </div>
     </div>
@@ -43,5 +50,14 @@
 {% endfor %}
 {% else %}
 <div class="alert alert-success"><i class="bi bi-check-circle"></i> Nicio duplicare detectata.</div>
+{% endif %}
+
+{% if excluded_count > 0 %}
+<div class="card mt-3">
+    <div class="card-header">Perechi excluse (confirmate ca diferite)</div>
+    <div class="card-body">
+        <p class="text-muted small mb-0">{{ excluded_count }} perechi au fost marcate ca "nu sunt duplicate" si nu mai apar in lista.</p>
+    </div>
+</div>
 {% endif %}
 {% endblock %}

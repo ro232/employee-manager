@@ -13,8 +13,12 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     nume_complet = db.Column(db.String(200), nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
+    role = db.Column(db.String(20), default="editor")  # admin, editor, viewer
     dark_mode = db.Column(db.Boolean, default=False)
+    hotel_id = db.Column(db.Integer, db.ForeignKey("hoteluri.id"), nullable=True)  # for hotel-specific view
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    hotel = db.relationship("Hotel", backref="users")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -151,3 +155,32 @@ class Notification(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref="notifications")
+
+
+class DuplicateExclusion(db.Model):
+    """Pairs of employees confirmed as NOT duplicates."""
+    __tablename__ = "duplicate_exclusions"
+    id = db.Column(db.Integer, primary_key=True)
+    angajat_id_1 = db.Column(db.Integer, db.ForeignKey("angajati.id"), nullable=False)
+    angajat_id_2 = db.Column(db.Integer, db.ForeignKey("angajati.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("angajat_id_1", "angajat_id_2", name="uq_dup_exclusion"),
+    )
+
+
+class Planificare(db.Model):
+    """Future shift planning."""
+    __tablename__ = "planificari"
+    id = db.Column(db.Integer, primary_key=True)
+    angajat_id = db.Column(db.Integer, db.ForeignKey("angajati.id"), nullable=False)
+    hotel_id = db.Column(db.Integer, db.ForeignKey("hoteluri.id"), nullable=False)
+    data = db.Column(db.Date, nullable=False)
+    ore_planificate = db.Column(db.Float, nullable=False, default=8)
+    firma_cod = db.Column(db.String(10), nullable=True)
+    nota = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    angajat = db.relationship("Angajat", backref="planificari")
+    hotel = db.relationship("Hotel", backref="planificari")

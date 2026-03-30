@@ -4,66 +4,69 @@
 <h2 class="mb-3"><i class="bi bi-person-plus"></i> Angajati Noi Detectati</h2>
 <div class="alert alert-warning">
     <i class="bi bi-exclamation-triangle"></i>
-    Urmatoarele persoane nu exista in baza de date. Completeaza datele lor pentru a continua importul.
-    Campurile pot fi completate si ulterior din pagina de editare.
+    Urmatoarele persoane nu exista in baza de date. Completeaza datele sau mapeaza-le la angajati existenti.
 </div>
 <form method="POST">
     {% for name in new_employees %}
     <div class="card mb-3">
-        <div class="card-header bg-primary text-white">
+        <div class="card-header bg-primary text-white d-flex justify-content-between">
             <strong>{{ loop.index }}. {{ name }}</strong>
             {% if name in similar_map %}
-            <span class="badge bg-warning text-dark ms-2"><i class="bi bi-exclamation-triangle"></i> Posibil duplicat</span>
+            <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Posibil duplicat</span>
             {% endif %}
         </div>
         <div class="card-body">
             {% if name in similar_map %}
-            <div class="alert alert-warning py-2 small mb-2">
-                <i class="bi bi-people"></i> <strong>Nume similar cu:</strong>
+            <div class="alert alert-warning py-2 small mb-3">
+                <i class="bi bi-people"></i> <strong>Nume similar cu angajati existenti:</strong>
                 {% for s in similar_map[name] %}
                 <span class="badge bg-dark">{{ s.angajat.nume_complet }} ({{ s.similarity }}%)</span>
                 {% endfor %}
-                - Verifica daca nu e aceeasi persoana!
+                <div class="mt-2">
+                    <label class="form-label small fw-bold">Este aceeasi persoana?</label>
+                    <select name="map_to_{{ name.replace(' ', '_') }}" class="form-select form-select-sm" style="max-width:300px">
+                        <option value="">Nu, e persoana noua</option>
+                        {% for s in similar_map[name] %}
+                        <option value="{{ s.angajat.id }}">Da, e {{ s.angajat.nume_complet }} ({{ s.similarity }}%)</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
             {% endif %}
             <div class="row g-2">
                 <div class="col-md-3">
-                    <label class="form-label">CNP</label>
-                    <input type="text" name="cnp_{{ name.replace(' ', '_') }}" class="form-control" maxlength="13">
+                    <label class="form-label small">CNP</label>
+                    <input type="text" name="cnp_{{ name.replace(' ', '_') }}" class="form-control form-control-sm" maxlength="13">
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label">Adresa</label>
-                    <input type="text" name="adresa_{{ name.replace(' ', '_') }}" class="form-control">
+                    <label class="form-label small">Adresa</label>
+                    <input type="text" name="adresa_{{ name.replace(' ', '_') }}" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label">Telefon</label>
-                    <input type="text" name="telefon_{{ name.replace(' ', '_') }}" class="form-control">
+                    <label class="form-label small">Telefon</label>
+                    <input type="text" name="telefon_{{ name.replace(' ', '_') }}" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Firma</label>
-                    <select name="firma_{{ name.replace(' ', '_') }}" class="form-select">
-                        <option value="">-- Selecteaza --</option>
-                        {% for f in firme %}
-                        <option value="{{ f.id }}">{{ f.cod }} - {{ f.nume }}</option>
-                        {% endfor %}
+                    <label class="form-label small">Firma</label>
+                    <select name="firma_{{ name.replace(' ', '_') }}" class="form-select form-select-sm">
+                        <option value="">--</option>
+                        {% for f in firme %}<option value="{{ f.id }}">{{ f.cod }} - {{ f.nume }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Nr. Contract</label>
-                    <input type="text" name="contract_{{ name.replace(' ', '_') }}" class="form-control">
+                    <label class="form-label small">Nr. Contract</label>
+                    <input type="text" name="contract_{{ name.replace(' ', '_') }}" class="form-control form-control-sm">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label">Functie</label>
-                    <input type="text" name="functie_{{ name.replace(' ', '_') }}" class="form-control">
+                    <label class="form-label small">Functie</label>
+                    <input type="text" name="functie_{{ name.replace(' ', '_') }}" class="form-control form-control-sm">
                 </div>
             </div>
         </div>
     </div>
     {% endfor %}
     <div class="mt-3">
-        <button type="submit" class="btn btn-primary btn-lg">
-            <i class="bi bi-check-lg"></i> Inregistreaza si Importa
-        </button>
+        <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-check-lg"></i> Inregistreaza si Importa</button>
         <a href="{{ url_for('import_page') }}" class="btn btn-outline-secondary">Anuleaza</a>
     </div>
 </form>

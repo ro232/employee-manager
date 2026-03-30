@@ -24,7 +24,7 @@
             {% for a in angajati %}
             <tr class="{{ 'table-secondary' if not a.activ }}">
                 <td>{{ loop.index }}</td>
-                <td><strong>{{ a.nume_complet }}</strong></td>
+                <td><a href="{{ url_for('profil_angajat', id=a.id) }}" class="text-decoration-none"><strong>{{ a.nume_complet }}</strong></a></td>
                 <td>{{ a.cnp or '-' }}</td>
                 <td>{{ a.telefon or '-' }}</td>
                 <td>

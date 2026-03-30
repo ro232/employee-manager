@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}{{ angajat.nume_complet }} - Profil{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-person-badge"></i> {{ angajat.nume_complet }}</h2>
+    <div>
+        <a href="{{ url_for('edit_angajat', id=angajat.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i> Editeaza</a>
+        <a href="{{ url_for('lista_angajati') }}" class="btn btn-sm btn-outline-secondary">Inapoi</a>
+    </div>
+</div>
+
+{% set total_ore = pontaje.total and monthly_hours|sum(attribute='value') or 0 %}
+{% set total_zile = pontaje.total %}
+
+<div class="row g-3 mb-3">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">Date Personale</div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr><td class="text-muted">CNP</td><td>{{ angajat.cnp or '-' }}</td></tr>
+                    <tr><td class="text-muted">Adresa</td><td>{{ angajat.adresa or '-' }}</td></tr>
+                    <tr><td class="text-muted">Telefon</td><td>{{ angajat.telefon or '-' }}</td></tr>
+                    <tr><td class="text-muted">Email</td><td>{{ angajat.email or '-' }}</td></tr>
+                    <tr><td class="text-muted">Status</td><td><span class="badge bg-{{ 'success' if angajat.activ else 'secondary' }}">{{ 'Activ' if angajat.activ else 'Inactiv' }}</span></td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">Contracte</div>
+            <div class="card-body">
+                {% for c in angajat.contracte %}
+                <div class="mb-2 p-2 border rounded">
+                    <strong>{{ c.firma.cod }} - {{ c.firma.nume }}</strong><br>
+                    <small class="text-muted">
+                        {% if c.cod_angajat %}Cod: {{ c.cod_angajat }} | {% endif %}
+                        {% if c.functie %}Functie: {{ c.functie }} | {% endif %}
+                        {% if c.tarif_orar %}Tarif: {{ c.tarif_orar }} RON/h{% endif %}
+                    </small>
+                </div>
+                {% else %}
+                <p class="text-muted">Niciun contract.</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">Statistici</div>
+            <div class="card-body">
+                <div class="stat-card p-2 mb-2"><span class="text-muted">Total Ore (6 luni)</span><div class="number" style="font-size:1.5rem">{{ '%.1f'|format(monthly_hours|sum(attribute='value')) }}</div></div>
+                <div class="stat-card p-2" style="border-left-color:#28a745"><span class="text-muted">Inregistrari Pontaj</span><div class="number" style="font-size:1.5rem;color:#28a745">{{ pontaje.total }}</div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-graph-up"></i> Ore pe Luna</div>
+            <div class="card-body"><canvas id="monthChart" height="180"></canvas></div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-pie-chart"></i> Per Hotel</div>
+            <div class="card-body"><canvas id="hotelChart" height="180"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-clock-history"></i> Istoric Pontaj ({{ pontaje.total }} inregistrari)</div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-striped mb-0">
+            <thead><tr><th>Data</th><th>Hotel</th><th>Firma</th><th>Ore</th></tr></thead>
+            <tbody>
+            {% for p in pontaje.items %}
+            <tr><td>{{ p.data.strftime('%d.%m.%Y') }}</td><td>{{ p.hotel.nume }}</td><td><span class="badge bg-secondary">{{ p.firma_cod or '-' }}</span></td><td>{{ p.ore }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if pontaje.pages > 1 %}
+    <div class="card-footer">
+        <nav><ul class="pagination pagination-sm mb-0 justify-content-center">
+            {% if pontaje.has_prev %}<li class="page-item"><a class="page-link" href="?page={{ pontaje.prev_num }}">Inapoi</a></li>{% endif %}
+            {% for p in pontaje.iter_pages() %}{% if p %}<li class="page-item {{ 'active' if p == pontaje.page }}"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>{% else %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}{% endfor %}
+            {% if pontaje.has_next %}<li class="page-item"><a class="page-link" href="?page={{ pontaje.next_num }}">Inainte</a></li>{% endif %}
+        </ul></nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('monthChart'), {
+    type:'bar', data:{labels:{{ monthly_hours|map(attribute='label')|list|tojson }}, datasets:[{label:'Ore', data:{{ monthly_hours|map(attribute='value')|list|tojson }}, backgroundColor:'rgba(43,87,154,0.7)', borderRadius:4}]},
+    options:{responsive:true, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
+});
+const hd = {{ hotel_data|tojson }};
+if(hd.length) new Chart(document.getElementById('hotelChart'), {
+    type:'doughnut', data:{labels:hd.map(d=>d.label), datasets:[{data:hd.map(d=>d.value), backgroundColor:['#2B579A','#28a745','#ffc107','#dc3545','#17a2b8','#6f42c1']}]},
+    options:{responsive:true}
+});
+</script>
+{% endblock %}

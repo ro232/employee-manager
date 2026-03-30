@@ -61,12 +61,21 @@
             <a class="nav-link {% if 'pontaj' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('lista_pontaje') }}">
                 <i class="bi bi-calendar-check"></i> Pontaj
             </a>
+            <a class="nav-link {% if 'calendar' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('calendar_view') }}">
+                <i class="bi bi-calendar-week"></i> Calendar
+            </a>
+            <a class="nav-link {% if 'planificare' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('planificare') }}">
+                <i class="bi bi-calendar-plus"></i> Planificare
+            </a>
             <div class="sidebar-section">Analize</div>
             <a class="nav-link {% if request.endpoint == 'rapoarte' %}active{% endif %}" href="{{ url_for('rapoarte') }}">
                 <i class="bi bi-bar-chart"></i> Rapoarte
             </a>
             <a class="nav-link {% if 'comparatie' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('comparatie_perioade') }}">
                 <i class="bi bi-arrow-left-right"></i> Comparatie
+            </a>
+            <a class="nav-link {% if 'overtime_report' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('overtime_report') }}">
+                <i class="bi bi-exclamation-diamond"></i> Ore Suplimentare
             </a>
             <div class="sidebar-section">Admin</div>
             <a class="nav-link {% if 'duplicate' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('detectare_duplicate') }}">

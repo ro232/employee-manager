@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Planificare{% endblock %}
+{% block extra_head %}
+<style>
+    .plan-table th, .plan-table td { font-size: 0.8rem; padding: 4px 6px; min-width: 110px; vertical-align: top; }
+    .plan-cell { border-radius: 4px; padding: 2px 4px; margin: 1px 0; font-size: 0.75rem; }
+    .plan-planned { background: rgba(40,167,69,0.1); border-left: 2px solid #28a745; }
+    .plan-actual { background: rgba(43,87,154,0.1); border-left: 2px solid #2B579A; }
+    .plan-name { font-weight: 600; white-space: nowrap; position: sticky; left: 0; background: var(--bs-body-bg); z-index: 1; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-calendar-plus"></i> Planificare</h2>
+    <div class="d-flex align-items-center gap-3">
+        <a href="?week_start={{ prev_week }}"><i class="bi bi-chevron-left"></i></a>
+        <strong>{{ week_start.strftime('%d.%m') }} - {{ week_end.strftime('%d.%m.%Y') }}</strong>
+        <a href="?week_start={{ next_week }}"><i class="bi bi-chevron-right"></i></a>
+        <a href="{{ url_for('planificare') }}" class="btn btn-sm btn-outline-secondary">Azi</a>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-header"><i class="bi bi-plus-circle"></i> Adauga Tura Planificata</div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('planificare_adauga') }}" class="row g-2 align-items-end">
+            <input type="hidden" name="week_start" value="{{ week_start.isoformat() }}">
+            <div class="col-md-2"><label class="form-label small">Angajat</label><select name="angajat_id" class="form-select form-select-sm" required><option value="">--</option>{% for a in angajati %}<option value="{{ a.id }}">{{ a.nume_complet }}</option>{% endfor %}</select></div>
+            <div class="col-md-2"><label class="form-label small">Hotel</label><select name="hotel_id" class="form-select form-select-sm" required><option value="">--</option>{% for h in hoteluri %}<option value="{{ h.id }}">{{ h.nume }}</option>{% endfor %}</select></div>
+            <div class="col-md-2"><label class="form-label small">Data</label><input type="date" name="data" class="form-control form-control-sm" value="{{ week_start.isoformat() }}" required></div>
+            <div class="col-md-1"><label class="form-label small">Ore</label><input type="number" name="ore" class="form-control form-control-sm" value="8" step="0.5" required></div>
+            <div class="col-md-1"><label class="form-label small">Firma</label><select name="firma_cod" class="form-select form-select-sm"><option value="">--</option>{% for f in firme %}<option value="{{ f.cod }}">{{ f.cod }}</option>{% endfor %}</select></div>
+            <div class="col-md-2"><label class="form-label small">Nota</label><input type="text" name="nota" class="form-control form-control-sm"></div>
+            <div class="col-md-1"><button type="submit" class="btn btn-success btn-sm w-100"><i class="bi bi-plus"></i></button></div>
+        </form>
+    </div>
+</div>
+
+<div class="mb-2">
+    <span class="plan-cell plan-planned d-inline-block px-2"><i class="bi bi-calendar-check"></i> Planificat</span>
+    <span class="plan-cell plan-actual d-inline-block px-2 ms-2"><i class="bi bi-check-circle"></i> Actual (pontaj)</span>
+</div>
+
+{% set all_ids = [] %}
+{% for aid in plan_grid %}{% if aid not in all_ids %}{% set _ = all_ids.append(aid) %}{% endif %}{% endfor %}
+{% for aid in actual_grid %}{% if aid not in all_ids %}{% set _ = all_ids.append(aid) %}{% endif %}{% endfor %}
+
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-bordered plan-table mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="plan-name">Angajat</th>
+                    {% for day in days %}
+                    <th class="text-center {{ 'table-warning' if day.weekday() >= 5 else '' }}">
+                        {{ ['Lun','Mar','Mie','Joi','Vin','Sam','Dum'][day.weekday()] }}<br>
+                        <small>{{ day.strftime('%d.%m') }}</small>
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+            {% for a in angajati %}
+            {% if a.id in plan_grid or a.id in actual_grid %}
+            <tr>
+                <td class="plan-name">{{ a.nume_complet }}</td>
+                {% for day in days %}
+                <td>
+                    {% for p in plan_grid[a.id][day] %}
+                    <div class="plan-cell plan-planned">
+                        <i class="bi bi-calendar-check"></i> {{ p.hotel }} {{ p.ore }}h
+                        <form method="POST" action="{{ url_for('planificare_delete', id=p.id) }}" class="d-inline">
+                            <button class="btn btn-link btn-sm p-0 text-danger" style="font-size:0.7rem"><i class="bi bi-x"></i></button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                    {% if actual_grid[a.id][day] %}
+                    <div class="plan-cell plan-actual"><i class="bi bi-check-circle"></i> {{ actual_grid[a.id][day] }}h actual</div>
+                    {% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            {% endif %}
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

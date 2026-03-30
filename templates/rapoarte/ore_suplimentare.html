@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Ore Suplimentare{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-exclamation-diamond"></i> Raport Ore Suplimentare</h2>
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2"><label class="form-label small">De la</label><input type="date" name="data_start" class="form-control form-control-sm" value="{{ filters.data_start if filters else '' }}" required></div>
+                <div class="col-md-2"><label class="form-label small">Pana la</label><input type="date" name="data_end" class="form-control form-control-sm" value="{{ filters.data_end if filters else '' }}" required></div>
+                <div class="col-md-2">
+                    <label class="form-label small">Mod</label>
+                    <select name="mode" class="form-select form-select-sm">
+                        <option value="weekly" {{ 'selected' if filters and filters.mode == 'weekly' else '' }}>Saptamanal</option>
+                        <option value="monthly" {{ 'selected' if filters and filters.mode == 'monthly' else '' }}>Lunar</option>
+                    </select>
+                </div>
+                <div class="col-md-2"><label class="form-label small">Prag (ore)</label><input type="number" name="threshold" class="form-control form-control-sm" value="{{ filters.threshold if filters else '40' }}" step="1"></div>
+                <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Analizeaza</button></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if overtime_data is defined and overtime_data %}
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> {{ overtime_data|length }} cazuri de depasire a pragului de {{ filters.threshold }}h/{{ 'saptamana' if filters.mode == 'weekly' else 'luna' }}.</div>
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Angajat</th><th>Perioada</th><th>Ore Lucrate</th><th>Prag</th><th>Depasire</th></tr></thead>
+            <tbody>
+            {% for item in overtime_data %}
+            <tr class="{{ 'table-danger' if item.exceeded else '' }}">
+                <td><a href="{{ url_for('profil_angajat', id=item.angajat_id) }}">{{ item.name }}</a></td>
+                <td>{{ item.period }}</td>
+                <td class="fw-bold">{{ '%.1f'|format(item.ore) }}</td>
+                <td>{{ filters.threshold }}</td>
+                <td class="text-danger fw-bold">+{{ '%.1f'|format(item.ore - filters.threshold|float) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% elif overtime_data is defined %}
+<div class="alert alert-success"><i class="bi bi-check-circle"></i> Nicio depasire detectata in perioada selectata.</div>
+{% endif %}
+{% endblock %}
