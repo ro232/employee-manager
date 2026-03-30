@@ -1368,14 +1368,13 @@ def register_routes(app):
             "ore": round(float(e[2]), 1), "zile": e[3]
         } for e in emp_data]
 
-        # Monthly breakdown for chart
-        monthly = db.session.query(
-            db.func.strftime("%Y-%m", Pontaj.data).label("luna"),
-            db.func.sum(Pontaj.ore).label("ore"),
-        ).filter(
-            Pontaj.hotel_id == hotel.id
-        ).group_by("luna").order_by("luna").all()
-        chart_data = [{"label": m[0], "value": round(float(m[1]), 1)} for m in monthly]
+        # Monthly breakdown for chart (compatible with SQLite and MySQL)
+        hotel_pontaje = Pontaj.query.filter_by(hotel_id=hotel.id).all()
+        monthly_grouped = {}
+        for p in hotel_pontaje:
+            key = p.data.strftime("%Y-%m")
+            monthly_grouped[key] = monthly_grouped.get(key, 0) + p.ore
+        chart_data = [{"label": k, "value": round(v, 1)} for k, v in sorted(monthly_grouped.items())]
 
         # Recent pontaje
         recent = (
