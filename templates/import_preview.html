@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Preview Import{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-eye"></i> Preview Import</h2>
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="stat-card p-3">
+                    <div class="text-muted small">Fisiere</div>
+                    <div class="number">{{ total_files }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card p-3" style="border-left-color: #28a745;">
+                    <div class="text-muted small">Inregistrari</div>
+                    <div class="number" style="color: #28a745;">{{ total_entries }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card p-3" style="border-left-color: #ffc107;">
+                    <div class="text-muted small">Angajati</div>
+                    <div class="number" style="color: #ffc107;">{{ names|length }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card p-3" style="border-left-color: #17a2b8;">
+                    <div class="text-muted small">Hoteluri</div>
+                    <div class="number" style="color: #17a2b8;">{{ hotels|length }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Fisiere</div>
+            <ul class="list-group list-group-flush">
+                {% for f in files %}<li class="list-group-item small">{{ f }}</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Angajati</div>
+            <ul class="list-group list-group-flush" style="max-height:250px;overflow-y:auto;">
+                {% for n in names %}<li class="list-group-item small">{{ n }}</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Hoteluri / Locatii</div>
+            <ul class="list-group list-group-flush">
+                {% for h in hotels %}<li class="list-group-item small">{{ h }}</li>{% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+<div class="mt-4">
+    <form method="POST" action="{{ url_for('import_confirm') }}" class="d-inline">
+        <button class="btn btn-primary btn-lg"><i class="bi bi-check-lg"></i> Confirma Importul</button>
+    </form>
+    <a href="{{ url_for('import_page') }}" class="btn btn-outline-secondary btn-lg">Anuleaza</a>
+</div>
+{% endblock %}

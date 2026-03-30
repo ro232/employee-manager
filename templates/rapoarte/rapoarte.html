@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Rapoarte{% endblock %}
+{% block content %}
+<h2 class="mb-3">Rapoarte</h2>
+<div class="card mb-4">
+    <div class="card-header"><i class="bi bi-funnel"></i> Filtre</div>
+    <div class="card-body">
+        <form method="POST" id="raportForm">
+            <div class="row g-2">
+                <div class="col-md-3">
+                    <label class="form-label small">Angajat</label>
+                    <select name="angajat_id" class="form-select form-select-sm">
+                        <option value="">-- Toti --</option>
+                        {% for a in angajati %}<option value="{{ a.id }}" {{ 'selected' if filters.angajat_id|default('') == a.id|string }}>{{ a.nume_complet }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Hotel</label>
+                    <select name="hotel_id" class="form-select form-select-sm">
+                        <option value="">-- Toate --</option>
+                        {% for h in hoteluri %}<option value="{{ h.id }}" {{ 'selected' if filters.hotel_id|default('') == h.id|string }}>{{ h.nume }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Firma</label>
+                    <select name="firma_cod" class="form-select form-select-sm">
+                        <option value="">-- Toate --</option>
+                        {% for f in firme %}<option value="{{ f.cod }}" {{ 'selected' if filters.firma_cod|default('') == f.cod }}>{{ f.cod }} - {{ f.nume }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">De la</label>
+                    <input type="date" name="data_start" class="form-control form-control-sm" value="{{ filters.data_start|default('') }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">Pana la</label>
+                    <input type="date" name="data_end" class="form-control form-control-sm" value="{{ filters.data_end|default('') }}">
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-md-2">
+                    <label class="form-label small">Grupare</label>
+                    <select name="grupare" class="form-select form-select-sm">
+                        <option value="detaliat" {{ 'selected' if filters.grupare|default('') == 'detaliat' }}>Detaliat</option>
+                        <option value="angajat" {{ 'selected' if filters.grupare|default('') == 'angajat' }}>Per Angajat</option>
+                        <option value="hotel" {{ 'selected' if filters.grupare|default('') == 'hotel' }}>Per Hotel</option>
+                        <option value="firma" {{ 'selected' if filters.grupare|default('') == 'firma' }}>Per Firma</option>
+                    </select>
+                </div>
+                <div class="col-md-8 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Genereaza</button>
+                    <button type="submit" formaction="{{ url_for('export_excel') }}" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+                    <button type="submit" formaction="{{ url_for('export_pdf') }}" class="btn btn-danger btn-sm"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if pontaje is not none %}
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="stat-card p-3">
+            <div class="text-muted small">Total Ore</div>
+            <div class="number">{{ '%.1f'|format(total_ore) }}</div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="stat-card p-3" style="border-left-color: #28a745;">
+            <div class="text-muted small">Cost Total (RON)</div>
+            <div class="number" style="color: #28a745;">{{ '%.2f'|format(total_cost) if total_cost else 'N/A' }}</div>
+        </div>
+    </div>
+</div>
+
+{% if chart_data %}
+<div class="card mb-3">
+    <div class="card-header"><i class="bi bi-graph-up"></i> Ore pe luna</div>
+    <div class="card-body"><canvas id="reportChart" height="150"></canvas></div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header"><i class="bi bi-table"></i> Rezultate ({{ pontaje|length }} inregistrari)</div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+        {% if grupare == 'detaliat' %}
+        <table class="table table-striped table-sm mb-0">
+            <thead><tr><th>Data</th><th>Angajat</th><th>Hotel</th><th>Firma</th><th>Ore</th></tr></thead>
+            <tbody>
+            {% for p in pontaje %}
+            <tr>
+                <td>{{ p.data.strftime('%d.%m.%Y') }}</td>
+                <td>{{ p.angajat.nume_complet }}</td>
+                <td>{{ p.hotel.nume }}</td>
+                <td><span class="badge bg-secondary">{{ p.firma_cod or 'None' }}</span></td>
+                <td>{{ p.ore }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted p-3">Nicio inregistrare.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <table class="table table-striped table-sm mb-0">
+            <thead><tr><th>{{ grupare|capitalize }}</th><th>Total Ore</th><th>Zile</th><th>Cost (RON)</th></tr></thead>
+            <tbody>
+            {% for key, vals in grouped|dictsort %}
+            <tr>
+                <td><strong>{{ key }}</strong></td>
+                <td>{{ '%.1f'|format(vals.ore) }}</td>
+                <td>{{ vals.zile }}</td>
+                <td>{{ '%.2f'|format(vals.cost) if vals.cost else '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted p-3">Nicio inregistrare.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if chart_data %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('reportChart'), {
+    type: 'line',
+    data: {
+        labels: {{ chart_data | map(attribute='label') | list | tojson }},
+        datasets: [{ label: 'Ore', data: {{ chart_data | map(attribute='value') | list | tojson }},
+            borderColor: '#2B579A', backgroundColor: 'rgba(43,87,154,0.1)', fill: true, tension: 0.3 }]
+    },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+});
+</script>
+{% endif %}
+{% endblock %}

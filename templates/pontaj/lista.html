@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Pontaj - Manager Angajati{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Pontaj</h2>
+    <a href="{{ url_for('pontaj_nou') }}" class="btn btn-success btn-sm"><i class="bi bi-plus-circle"></i> Pontaj Manual</a>
+</div>
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-striped table-sm mb-0">
+            <thead><tr><th>Data</th><th>Angajat</th><th>Hotel</th><th>Firma</th><th>Ore</th><th>Sursa</th></tr></thead>
+            <tbody>
+            {% for p in pontaje.items %}
+            <tr>
+                <td>{{ p.data.strftime('%d.%m.%Y') }}</td>
+                <td>{{ p.angajat.nume_complet }}</td>
+                <td>{{ p.hotel.nume }}</td>
+                <td><span class="badge bg-secondary">{{ p.firma_cod or 'None' }}</span></td>
+                <td>{{ p.ore }}</td>
+                <td><small class="text-muted">{{ p.fisier_sursa or '' }}</small></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted p-3">Nicio inregistrare.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+    {% if pontaje.pages > 1 %}
+    <div class="card-footer">
+        <nav>
+            <ul class="pagination pagination-sm mb-0 justify-content-center">
+                {% if pontaje.has_prev %}
+                <li class="page-item"><a class="page-link" href="?page={{ pontaje.prev_num }}">Inapoi</a></li>
+                {% endif %}
+                {% for p in pontaje.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                    {% if p %}
+                    <li class="page-item {{ 'active' if p == pontaje.page }}">
+                        <a class="page-link" href="?page={{ p }}">{{ p }}</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                {% if pontaje.has_next %}
+                <li class="page-item"><a class="page-link" href="?page={{ pontaje.next_num }}">Inainte</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

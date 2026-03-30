@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Import Excel - Manager Angajati{% endblock %}
+{% block content %}
+<h2 class="mb-3">Import Excel</h2>
+<div class="row g-3">
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-upload"></i> Incarca Fisier</div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">Selecteaza fisier (.xlsx sau .zip cu mai multe .xlsx)</label>
+                        <input type="file" name="file" class="form-control" accept=".xlsx,.zip" required>
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Format asteptat:</strong><br>
+                        - <strong>D1:</strong> Perioada (ex: 2026.03.16-22)<br>
+                        - <strong>B:</strong> Data (zi.luna.)<br>
+                        - <strong>C:</strong> Nume angajat<br>
+                        - <strong>D:</strong> Hotel / Locatie<br>
+                        - <strong>E:</strong> Cod firma (D=Deltha, E=E-thema, gol=None)<br>
+                        - <strong>F:</strong> Ore lucrate
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-upload"></i> Importa
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-clock-history"></i> Importuri Recente</div>
+            <div class="card-body p-0">
+                {% if recent_imports %}
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Fisier</th><th>Inregistrari</th></tr></thead>
+                    <tbody>
+                    {% for filename, count in recent_imports %}
+                    <tr>
+                        <td>{{ filename or 'N/A' }}</td>
+                        <td><span class="badge bg-success">{{ count }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="p-3 text-muted mb-0">Niciun import efectuat.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Comparatie Perioade{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-arrow-left-right"></i> Comparatie Perioade</h2>
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row g-3">
+                <div class="col-md-5">
+                    <h6>Perioada 1</h6>
+                    <div class="row g-2">
+                        <div class="col-6"><input type="date" name="p1_start" class="form-control form-control-sm" required value="{{ result.filters.p1_start if result else '' }}"></div>
+                        <div class="col-6"><input type="date" name="p1_end" class="form-control form-control-sm" required value="{{ result.filters.p1_end if result else '' }}"></div>
+                    </div>
+                </div>
+                <div class="col-md-5">
+                    <h6>Perioada 2</h6>
+                    <div class="row g-2">
+                        <div class="col-6"><input type="date" name="p2_start" class="form-control form-control-sm" required value="{{ result.filters.p2_start if result else '' }}"></div>
+                        <div class="col-6"><input type="date" name="p2_end" class="form-control form-control-sm" required value="{{ result.filters.p2_end if result else '' }}"></div>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <h6>Filtru</h6>
+                    <select name="angajat_id" class="form-select form-select-sm">
+                        <option value="">Toti</option>
+                        {% for a in angajati %}<option value="{{ a.id }}" {{ 'selected' if result and result.filters.angajat_id|string == a.id|string }}>{{ a.nume_complet }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-arrow-left-right"></i> Compara</button>
+        </form>
+    </div>
+</div>
+
+{% if result %}
+<div class="row g-3 mb-3">
+    <div class="col-md-6">
+        <div class="stat-card p-3" style="border-left-color: #2B579A;">
+            <div class="text-muted small">{{ result.p1_label }}</div>
+            <div class="number">{{ '%.1f'|format(result.p1_total) }} ore</div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="stat-card p-3" style="border-left-color: #28a745;">
+            <div class="text-muted small">{{ result.p2_label }}</div>
+            <div class="number" style="color: #28a745;">{{ '%.1f'|format(result.p2_total) }} ore</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Angajat</th><th>P1 Ore</th><th>P1 Zile</th><th>P2 Ore</th><th>P2 Zile</th><th>Diferenta</th><th>%</th></tr></thead>
+            <tbody>
+            {% for c in result.comparison %}
+            <tr>
+                <td>{{ c.name }}</td>
+                <td>{{ '%.1f'|format(c.p1_ore) }}</td>
+                <td>{{ c.p1_zile }}</td>
+                <td>{{ '%.1f'|format(c.p2_ore) }}</td>
+                <td>{{ c.p2_zile }}</td>
+                <td class="{{ 'text-success' if c.diff > 0 else 'text-danger' if c.diff < 0 else '' }}">
+                    {{ '+' if c.diff > 0 else '' }}{{ '%.1f'|format(c.diff) }}
+                </td>
+                <td class="{{ 'text-success' if c.pct > 0 else 'text-danger' if c.pct < 0 else '' }}">
+                    {{ '+' if c.pct > 0 else '' }}{{ c.pct }}%
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header">Comparatie vizuala</div>
+    <div class="card-body"><canvas id="compChart" height="200"></canvas></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if result %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+const data = {{ result.comparison | tojson }};
+new Chart(document.getElementById('compChart'), {
+    type: 'bar',
+    data: {
+        labels: data.map(d => d.name),
+        datasets: [
+            { label: '{{ result.p1_label }}', data: data.map(d => d.p1_ore), backgroundColor: 'rgba(43,87,154,0.7)' },
+            { label: '{{ result.p2_label }}', data: data.map(d => d.p2_ore), backgroundColor: 'rgba(40,167,69,0.7)' },
+        ]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+});
+</script>
+{% endif %}
+{% endblock %}

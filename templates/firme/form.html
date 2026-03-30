@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editeaza Firma' if firma is defined else 'Firma Noua' }}{% endblock %}
+{% block content %}
+<h2 class="mb-3">{{ 'Editeaza Firma' if firma is defined else 'Firma Noua' }}</h2>
+<div class="card">
+    <div class="card-body">
+        <form method="POST">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Cod (litera) *</label>
+                    <input type="text" name="cod" class="form-control" required maxlength="10"
+                           value="{{ firma.cod if firma is defined else '' }}" style="text-transform:uppercase">
+                    <small class="text-muted">Ex: D, E, N (corespunde coloanei E din Excel)</small>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Nume Firma *</label>
+                    <input type="text" name="nume" class="form-control" required
+                           value="{{ firma.nume if firma is defined else '' }}">
+                </div>
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Salveaza</button>
+                <a href="{{ url_for('lista_firme') }}" class="btn btn-outline-secondary">Anuleaza</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

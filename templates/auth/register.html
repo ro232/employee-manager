@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Cont Nou{% endblock %}
+{% block content %}
+<h2 class="mb-3">Cont Nou</h2>
+<div class="card" style="max-width: 500px;">
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label class="form-label">Username *</label>
+                <input type="text" name="username" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Parola *</label>
+                <input type="password" name="password" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Nume Complet</label>
+                <input type="text" name="nume_complet" class="form-control">
+            </div>
+            <button type="submit" class="btn btn-primary">Creeaza Cont</button>
+            <a href="{{ url_for('lista_users') }}" class="btn btn-outline-secondary">Anuleaza</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Angajati - Manager Angajati{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Angajati</h2>
+    <a href="{{ url_for('angajat_nou') }}" class="btn btn-success"><i class="bi bi-person-plus"></i> Angajat Nou</a>
+</div>
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Nume Complet</th>
+                    <th>CNP</th>
+                    <th>Telefon</th>
+                    <th>Firme / Contracte</th>
+                    <th>Status</th>
+                    <th>Actiuni</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for a in angajati %}
+            <tr class="{{ 'table-secondary' if not a.activ }}">
+                <td>{{ loop.index }}</td>
+                <td><strong>{{ a.nume_complet }}</strong></td>
+                <td>{{ a.cnp or '-' }}</td>
+                <td>{{ a.telefon or '-' }}</td>
+                <td>
+                    {% for c in a.contracte %}
+                    <span class="badge bg-primary">{{ c.firma.cod }} - {{ c.cod_angajat or c.firma.nume }}</span>
+                    {% if c.functie %}<small class="text-muted">({{ c.functie }})</small>{% endif %}
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% if a.activ %}
+                    <span class="badge bg-success">Activ</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Inactiv</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ url_for('edit_angajat', id=a.id) }}" class="btn btn-sm btn-outline-primary" title="Editeaza">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <form method="POST" action="{{ url_for('delete_angajat', id=a.id) }}" class="d-inline"
+                          onsubmit="return confirm('Dezactivezi angajatul {{ a.nume_complet }}?')">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Dezactiveaza">
+                            <i class="bi bi-person-dash"></i>
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted p-4">Niciun angajat. Adauga unul sau importa din Excel.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

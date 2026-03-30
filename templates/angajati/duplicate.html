@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Detectare Duplicate{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-people"></i> Detectare Duplicate</h2>
+{% if duplicates %}
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> {{ duplicates|length }} perechi de nume similare gasite.</div>
+{% for d in duplicates %}
+<div class="card mb-3">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <h6>{{ d.a1.nume_complet }}</h6>
+                <small class="text-muted">ID: {{ d.a1.id }} | Pontaje: {{ d.a1.pontaje|length }}</small>
+            </div>
+            <div class="col-md-1 text-center">
+                <span class="badge bg-warning text-dark fs-6">{{ d.similarity }}%</span>
+            </div>
+            <div class="col-md-4">
+                <h6>{{ d.a2.nume_complet }}</h6>
+                <small class="text-muted">ID: {{ d.a2.id }} | Pontaje: {{ d.a2.pontaje|length }}</small>
+            </div>
+            <div class="col-md-3">
+                <form method="POST" action="{{ url_for('merge_angajati') }}" class="d-inline"
+                      onsubmit="return confirm('Unifici {{ d.a2.nume_complet }} in {{ d.a1.nume_complet }}?')">
+                    <input type="hidden" name="keep_id" value="{{ d.a1.id }}">
+                    <input type="hidden" name="remove_id" value="{{ d.a2.id }}">
+                    <button class="btn btn-sm btn-outline-primary" title="Pastreaza {{ d.a1.nume_complet }}">
+                        <i class="bi bi-arrow-left"></i> Pastreaza stanga
+                    </button>
+                </form>
+                <form method="POST" action="{{ url_for('merge_angajati') }}" class="d-inline"
+                      onsubmit="return confirm('Unifici {{ d.a1.nume_complet }} in {{ d.a2.nume_complet }}?')">
+                    <input type="hidden" name="keep_id" value="{{ d.a2.id }}">
+                    <input type="hidden" name="remove_id" value="{{ d.a1.id }}">
+                    <button class="btn btn-sm btn-outline-primary" title="Pastreaza {{ d.a2.nume_complet }}">
+                        Pastreaza dreapta <i class="bi bi-arrow-right"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="alert alert-success"><i class="bi bi-check-circle"></i> Nicio duplicare detectata.</div>
+{% endif %}
+{% endblock %}

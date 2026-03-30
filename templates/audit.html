@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-journal-text"></i> Audit Log</h2>
+<div class="card">
+    <div class="card-body p-0">
+        <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Data</th><th>Utilizator</th><th>Actiune</th><th>Entitate</th><th>Detalii</th></tr></thead>
+            <tbody>
+            {% for l in logs.items %}
+            <tr>
+                <td><small>{{ l.created_at.strftime('%d.%m.%Y %H:%M') }}</small></td>
+                <td>{{ l.user.username if l.user else 'System' }}</td>
+                <td><span class="badge bg-{{ 'success' if l.actiune == 'CREATE' else 'warning' if l.actiune == 'UPDATE' else 'danger' if l.actiune == 'DELETE' else 'info' }}">{{ l.actiune }}</span></td>
+                <td>{{ l.entitate }} {% if l.entitate_id %}#{{ l.entitate_id }}{% endif %}</td>
+                <td><small>{{ l.detalii or '' }}</small></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted p-3">Nicio intrare.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if logs.pages > 1 %}
+    <div class="card-footer">
+        <nav><ul class="pagination pagination-sm mb-0 justify-content-center">
+            {% if logs.has_prev %}<li class="page-item"><a class="page-link" href="?page={{ logs.prev_num }}">Inapoi</a></li>{% endif %}
+            {% for p in logs.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}<li class="page-item {{ 'active' if p == logs.page }}"><a class="page-link" href="?page={{ p }}">{{ p }}</a></li>
+                {% else %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+            {% endfor %}
+            {% if logs.has_next %}<li class="page-item"><a class="page-link" href="?page={{ logs.next_num }}">Inainte</a></li>{% endif %}
+        </ul></nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

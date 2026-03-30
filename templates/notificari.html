@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Notificari{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-bell"></i> Notificari</h2>
+    <form method="POST" action="{{ url_for('citeste_notificari') }}">
+        <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check-all"></i> Marcheaza toate citite</button>
+    </form>
+</div>
+{% for n in notificari %}
+<div class="card mb-2 {{ '' if n.citit else 'border-primary' }}">
+    <div class="card-body py-2 d-flex align-items-center">
+        <i class="bi bi-{{ 'check-circle text-success' if n.tip == 'success' else 'exclamation-triangle text-warning' if n.tip == 'warning' else 'info-circle text-info' if n.tip == 'info' else 'x-circle text-danger' }} me-3 fs-5"></i>
+        <div class="flex-grow-1">
+            <div>{{ n.mesaj }}</div>
+            <small class="text-muted">{{ n.created_at.strftime('%d.%m.%Y %H:%M') }}</small>
+        </div>
+        {% if n.link %}<a href="{{ n.link }}" class="btn btn-sm btn-outline-primary">Deschide</a>{% endif %}
+    </div>
+</div>
+{% else %}
+<p class="text-muted">Nicio notificare.</p>
+{% endfor %}
+{% endblock %}
