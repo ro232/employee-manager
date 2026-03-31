@@ -21,14 +21,40 @@
                     </div>
                 </div>
                 <div class="col-md-2">
-                    <h6>Filtru</h6>
+                    <h6>Compara per</h6>
+                    <select name="grupare" class="form-select form-select-sm">
+                        <option value="angajat" {{ 'selected' if result and result.filters.grupare == 'angajat' }}>Angajat</option>
+                        <option value="hotel" {{ 'selected' if result and result.filters.grupare == 'hotel' }}>Hotel</option>
+                        <option value="firma" {{ 'selected' if result and result.filters.grupare == 'firma' }}>Firma</option>
+                    </select>
+                </div>
+            </div>
+            <div class="row g-2 mt-2">
+                <div class="col-md-3">
+                    <label class="form-label small">Filtru Angajat</label>
                     <select name="angajat_id" class="form-select form-select-sm">
                         <option value="">Toti</option>
                         {% for a in angajati %}<option value="{{ a.id }}" {{ 'selected' if result and result.filters.angajat_id|string == a.id|string }}>{{ a.nume_complet }}</option>{% endfor %}
                     </select>
                 </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Filtru Hotel</label>
+                    <select name="hotel_id" class="form-select form-select-sm">
+                        <option value="">Toate</option>
+                        {% for h in hoteluri %}<option value="{{ h.id }}" {{ 'selected' if result and result.filters.hotel_id|string == h.id|string }}>{{ h.nume }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Filtru Firma</label>
+                    <select name="firma_cod" class="form-select form-select-sm">
+                        <option value="">Toate</option>
+                        {% for f in firme %}<option value="{{ f.cod }}" {{ 'selected' if result and result.filters.firma_cod == f.cod }}>{{ f.cod }} - {{ f.nume }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-arrow-left-right"></i> Compara</button>
+                </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-arrow-left-right"></i> Compara</button>
         </form>
     </div>
 </div>
@@ -49,14 +75,14 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card mb-3">
     <div class="card-body p-0">
         <table class="table table-sm table-hover mb-0">
-            <thead><tr><th>Angajat</th><th>P1 Ore</th><th>P1 Zile</th><th>P2 Ore</th><th>P2 Zile</th><th>Diferenta</th><th>%</th></tr></thead>
+            <thead><tr><th>{{ result.grupare_label }}</th><th>P1 Ore</th><th>P1 Zile</th><th>P2 Ore</th><th>P2 Zile</th><th>Diferenta</th><th>%</th></tr></thead>
             <tbody>
             {% for c in result.comparison %}
             <tr>
-                <td>{{ c.name }}</td>
+                <td><strong>{{ c.name }}</strong></td>
                 <td>{{ '%.1f'|format(c.p1_ore) }}</td>
                 <td>{{ c.p1_zile }}</td>
                 <td>{{ '%.1f'|format(c.p2_ore) }}</td>
@@ -74,7 +100,7 @@
     </div>
 </div>
 
-<div class="card mt-3">
+<div class="card">
     <div class="card-header">Comparatie vizuala</div>
     <div class="card-body"><canvas id="compChart" height="200"></canvas></div>
 </div>

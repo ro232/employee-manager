@@ -1494,6 +1494,8 @@ def register_routes(app):
     @login_required
     def comparatie_perioade():
         angajati = Angajat.query.order_by(Angajat.nume_complet).all()
+        hoteluri = Hotel.query.order_by(Hotel.nume).all()
+        firme = Firma.query.order_by(Firma.nume).all()
         result = None
 
         if request.method == "POST":
@@ -1501,50 +1503,84 @@ def register_routes(app):
             p1_end = request.form.get("p1_end")
             p2_start = request.form.get("p2_start")
             p2_end = request.form.get("p2_end")
+            grupare = request.form.get("grupare", "angajat")
             angajat_id = request.form.get("angajat_id", "")
+            hotel_id = request.form.get("hotel_id", "")
+            firma_cod = request.form.get("firma_cod", "")
 
-            def get_period_data(start, end, ang_id=None):
-                q = db.session.query(
-                    Angajat.nume_complet,
-                    db.func.sum(Pontaj.ore).label("total_ore"),
-                    db.func.count(Pontaj.id).label("zile"),
-                ).join(Pontaj).filter(
+            def get_period_data(start, end):
+                if grupare == "angajat":
+                    q = db.session.query(
+                        Angajat.nume_complet,
+                        db.func.sum(Pontaj.ore).label("total_ore"),
+                        db.func.count(Pontaj.id).label("zile"),
+                    ).join(Pontaj)
+                elif grupare == "hotel":
+                    q = db.session.query(
+                        Hotel.nume,
+                        db.func.sum(Pontaj.ore).label("total_ore"),
+                        db.func.count(Pontaj.id).label("zile"),
+                    ).join(Pontaj)
+                else:  # firma
+                    q = db.session.query(
+                        Pontaj.firma_cod,
+                        db.func.sum(Pontaj.ore).label("total_ore"),
+                        db.func.count(Pontaj.id).label("zile"),
+                    )
+
+                q = q.filter(
                     Pontaj.data >= date.fromisoformat(start),
                     Pontaj.data <= date.fromisoformat(end),
-                ).group_by(Angajat.nume_complet)
-                if ang_id:
-                    q = q.filter(Pontaj.angajat_id == int(ang_id))
-                return {r[0]: {"ore": float(r[1]), "zile": r[2]} for r in q.all()}
+                )
+                if angajat_id:
+                    q = q.filter(Pontaj.angajat_id == int(angajat_id))
+                if hotel_id:
+                    q = q.filter(Pontaj.hotel_id == int(hotel_id))
+                if firma_cod:
+                    q = q.filter(Pontaj.firma_cod == firma_cod)
 
-            d1 = get_period_data(p1_start, p1_end, angajat_id)
-            d2 = get_period_data(p2_start, p2_end, angajat_id)
-            all_names = sorted(set(list(d1.keys()) + list(d2.keys())))
+                if grupare == "angajat":
+                    q = q.group_by(Angajat.nume_complet)
+                elif grupare == "hotel":
+                    q = q.group_by(Hotel.nume)
+                else:
+                    q = q.group_by(Pontaj.firma_cod)
+
+                return {(r[0] or "N/A"): {"ore": float(r[1]), "zile": r[2]} for r in q.all()}
+
+            d1 = get_period_data(p1_start, p1_end)
+            d2 = get_period_data(p2_start, p2_end)
+            all_keys = sorted(set(list(d1.keys()) + list(d2.keys())))
 
             comparison = []
-            for name in all_names:
-                v1 = d1.get(name, {"ore": 0, "zile": 0})
-                v2 = d2.get(name, {"ore": 0, "zile": 0})
+            for key in all_keys:
+                v1 = d1.get(key, {"ore": 0, "zile": 0})
+                v2 = d2.get(key, {"ore": 0, "zile": 0})
                 diff = v2["ore"] - v1["ore"]
                 comparison.append({
-                    "name": name,
+                    "name": key,
                     "p1_ore": v1["ore"], "p1_zile": v1["zile"],
                     "p2_ore": v2["ore"], "p2_zile": v2["zile"],
                     "diff": diff,
                     "pct": round(diff / v1["ore"] * 100, 1) if v1["ore"] else 0,
                 })
 
+            grupare_labels = {"angajat": "Angajat", "hotel": "Hotel", "firma": "Firma"}
             result = {
                 "comparison": comparison,
+                "grupare_label": grupare_labels.get(grupare, "Angajat"),
                 "p1_label": f"{p1_start} - {p1_end}",
                 "p2_label": f"{p2_start} - {p2_end}",
                 "p1_total": sum(v["ore"] for v in d1.values()),
                 "p2_total": sum(v["ore"] for v in d2.values()),
                 "filters": {"p1_start": p1_start, "p1_end": p1_end,
                              "p2_start": p2_start, "p2_end": p2_end,
-                             "angajat_id": angajat_id},
+                             "grupare": grupare, "angajat_id": angajat_id,
+                             "hotel_id": hotel_id, "firma_cod": firma_cod},
             }
 
-        return render_template("rapoarte/comparatie.html", angajati=angajati, result=result)
+        return render_template("rapoarte/comparatie.html",
+                               angajati=angajati, hoteluri=hoteluri, firme=firme, result=result)
 
     # -----------------------------------------------------------------------
     # OVERTIME REPORT (Feature 7)
