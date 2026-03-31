@@ -59,6 +59,12 @@ def create_app():
     os.makedirs(os.path.join(app.instance_path), exist_ok=True)
     os.makedirs(os.path.join(app.instance_path, "backups"), exist_ok=True)
 
+    # Force HTTPS in production
+    @app.before_request
+    def force_https():
+        if request.headers.get("X-Forwarded-Proto", "http") == "http" and not app.debug:
+            return redirect(request.url.replace("http://", "https://", 1), code=301)
+
     db.init_app(app)
     login_manager = LoginManager()
     login_manager.init_app(app)
