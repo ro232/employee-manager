@@ -51,8 +51,9 @@
                         {% for f in firme %}<option value="{{ f.cod }}" {{ 'selected' if result and result.filters.firma_cod == f.cod }}>{{ f.cod }} - {{ f.nume }}</option>{% endfor %}
                     </select>
                 </div>
-                <div class="col-md-3 d-flex align-items-end">
-                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-arrow-left-right"></i> Compara</button>
+                <div class="col-md-3 d-flex align-items-end gap-1">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-arrow-left-right"></i> Compara</button>
+                    <button type="submit" formaction="{{ url_for('export_comparatie') }}" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-excel"></i></button>
                 </div>
             </div>
         </form>

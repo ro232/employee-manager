@@ -7,7 +7,10 @@
         <form method="POST" class="row g-2 align-items-end">
             <div class="col-md-3"><label class="form-label small">De la</label><input type="date" name="data_start" class="form-control form-control-sm" value="{{ filters.data_start|default('') }}" required></div>
             <div class="col-md-3"><label class="form-label small">Pana la</label><input type="date" name="data_end" class="form-control form-control-sm" value="{{ filters.data_end|default('') }}" required></div>
-            <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Genereaza</button></div>
+            <div class="col-md-3 d-flex gap-1">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Genereaza</button>
+                <button type="submit" formaction="{{ url_for('export_firma_hotel') }}" class="btn btn-success btn-sm"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+            </div>
         </form>
     </div>
 </div>

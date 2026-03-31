@@ -1762,6 +1762,177 @@ def register_routes(app):
         return render_template("rapoarte/transport.html", result=result, filters=filters)
 
     # -----------------------------------------------------------------------
+    # EXPORT EXCEL - Comparatie, Overtime, Firma/Hotel, Transport
+    # -----------------------------------------------------------------------
+    def _excel_response(wb, prefix):
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return send_file(output, as_attachment=True,
+                         download_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    @app.route("/rapoarte/comparatie/export", methods=["POST"])
+    @login_required
+    def export_comparatie():
+        # Re-run the comparison logic
+        p1_start = request.form.get("p1_start")
+        p1_end = request.form.get("p1_end")
+        p2_start = request.form.get("p2_start")
+        p2_end = request.form.get("p2_end")
+        grupare = request.form.get("grupare", "angajat")
+        angajat_id = request.form.get("angajat_id", "")
+        hotel_id = request.form.get("hotel_id", "")
+        firma_cod = request.form.get("firma_cod", "")
+
+        def get_data(start, end):
+            if grupare == "hotel":
+                q = db.session.query(Hotel.nume, db.func.sum(Pontaj.ore), db.func.count(Pontaj.id)).join(Pontaj)
+            elif grupare == "firma":
+                q = db.session.query(Pontaj.firma_cod, db.func.sum(Pontaj.ore), db.func.count(Pontaj.id))
+            else:
+                q = db.session.query(Angajat.nume_complet, db.func.sum(Pontaj.ore), db.func.count(Pontaj.id)).join(Pontaj)
+            q = q.filter(Pontaj.data >= date.fromisoformat(start), Pontaj.data <= date.fromisoformat(end))
+            if angajat_id: q = q.filter(Pontaj.angajat_id == int(angajat_id))
+            if hotel_id: q = q.filter(Pontaj.hotel_id == int(hotel_id))
+            if firma_cod: q = q.filter(Pontaj.firma_cod == firma_cod)
+            if grupare == "hotel": q = q.group_by(Hotel.nume)
+            elif grupare == "firma": q = q.group_by(Pontaj.firma_cod)
+            else: q = q.group_by(Angajat.nume_complet)
+            return {(r[0] or "N/A"): {"ore": float(r[1]), "zile": r[2]} for r in q.all()}
+
+        d1 = get_data(p1_start, p1_end)
+        d2 = get_data(p2_start, p2_end)
+        all_keys = sorted(set(list(d1.keys()) + list(d2.keys())))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Comparatie"
+        hf = Font(bold=True, color="FFFFFF")
+        hfill = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
+        ws.append([f"Comparatie per {grupare}", f"P1: {p1_start} - {p1_end}", "", f"P2: {p2_start} - {p2_end}"])
+        headers = [grupare.capitalize(), "P1 Ore", "P1 Zile", "P2 Ore", "P2 Zile", "Diferenta", "%"]
+        ws.append(headers)
+        for i, cell in enumerate(ws[2], 1):
+            cell.font = hf
+            cell.fill = hfill
+        for key in all_keys:
+            v1 = d1.get(key, {"ore": 0, "zile": 0})
+            v2 = d2.get(key, {"ore": 0, "zile": 0})
+            diff = v2["ore"] - v1["ore"]
+            pct = round(diff / v1["ore"] * 100, 1) if v1["ore"] else 0
+            ws.append([key, round(v1["ore"], 1), v1["zile"], round(v2["ore"], 1), v2["zile"], round(diff, 1), pct])
+        return _excel_response(wb, "comparatie")
+
+    @app.route("/rapoarte/ore-suplimentare/export", methods=["POST"])
+    @login_required
+    def export_overtime():
+        data_start = request.form.get("data_start", "")
+        data_end = request.form.get("data_end", "")
+        mode = request.form.get("mode", "weekly")
+        threshold = float(request.form.get("threshold", "40"))
+
+        pontaje = Pontaj.query.join(Angajat).filter(
+            Pontaj.data >= date.fromisoformat(data_start),
+            Pontaj.data <= date.fromisoformat(data_end),
+        ).all()
+
+        grouped = defaultdict(lambda: defaultdict(float))
+        ang_map = {}
+        for p in pontaje:
+            if mode == "weekly":
+                iso = p.data.isocalendar()
+                period_key = f"{iso[0]}-W{iso[1]:02d}"
+            else:
+                period_key = p.data.strftime("%Y-%m")
+            grouped[p.angajat.nume_complet][period_key] += p.ore
+            ang_map[p.angajat.nume_complet] = p.angajat.id
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Ore Suplimentare"
+        hf = Font(bold=True, color="FFFFFF")
+        hfill = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
+        ws.append([f"Ore Suplimentare - Prag: {threshold}h/{mode}", f"{data_start} - {data_end}"])
+        ws.append(["Angajat", "Perioada", "Ore", "Depasire"])
+        for i, cell in enumerate(ws[2], 1):
+            cell.font = hf
+            cell.fill = hfill
+        for name, periods in sorted(grouped.items()):
+            for period, ore in sorted(periods.items()):
+                if ore > threshold:
+                    ws.append([name, period, round(ore, 1), round(ore - threshold, 1)])
+        return _excel_response(wb, "ore_suplimentare")
+
+    @app.route("/rapoarte/firma-hotel/export", methods=["POST"])
+    @login_required
+    def export_firma_hotel():
+        data_start = request.form.get("data_start", "")
+        data_end = request.form.get("data_end", "")
+
+        q = db.session.query(
+            Hotel.nume, Pontaj.firma_cod, db.func.sum(Pontaj.ore), db.func.count(Pontaj.id),
+        ).join(Hotel).group_by(Hotel.nume, Pontaj.firma_cod)
+        if data_start: q = q.filter(Pontaj.data >= date.fromisoformat(data_start))
+        if data_end: q = q.filter(Pontaj.data <= date.fromisoformat(data_end))
+
+        hotels_data = {}
+        for r in q.all():
+            h = r[0]
+            if h not in hotels_data:
+                hotels_data[h] = {"firme": {}, "total": 0}
+            hotels_data[h]["firme"][r[1] or "N/A"] = float(r[2])
+            hotels_data[h]["total"] += float(r[2])
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Firma Hotel"
+        hf = Font(bold=True, color="FFFFFF")
+        hfill = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
+        ws.append([f"Distributie Firme per Hotel", f"{data_start} - {data_end}"])
+        ws.append(["Hotel", "Firma", "Ore", "Procent"])
+        for i, cell in enumerate(ws[2], 1):
+            cell.font = hf
+            cell.fill = hfill
+        for hotel, data in sorted(hotels_data.items()):
+            for firma, ore in sorted(data["firme"].items()):
+                pct = round(ore / data["total"] * 100, 1) if data["total"] else 0
+                ws.append([hotel, firma, round(ore, 1), f"{pct}%"])
+            ws.append([hotel, "TOTAL", round(data["total"], 1), "100%"])
+        return _excel_response(wb, "firma_hotel")
+
+    @app.route("/rapoarte/transport/export", methods=["POST"])
+    @login_required
+    def export_transport():
+        data_start = request.form.get("data_start", "")
+        data_end = request.form.get("data_end", "")
+
+        q = Pontaj.query.join(Angajat).join(Hotel).filter(Pontaj.transport_cost.isnot(None))
+        if data_start: q = q.filter(Pontaj.data >= date.fromisoformat(data_start))
+        if data_end: q = q.filter(Pontaj.data <= date.fromisoformat(data_end))
+        pontaje = q.order_by(Angajat.nume_complet, Pontaj.data).all()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Transport"
+        hf = Font(bold=True, color="FFFFFF")
+        hfill = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
+        ws.append([f"Costuri Transport", f"{data_start} - {data_end}"])
+        ws.append(["Angajat", "Data", "Hotel", "Tip Transport", "Cost (RON)"])
+        for i, cell in enumerate(ws[2], 1):
+            cell.font = hf
+            cell.fill = hfill
+        total = 0
+        for p in pontaje:
+            ws.append([p.angajat.nume_complet, p.data.strftime("%d.%m.%Y"), p.hotel.nume,
+                        p.transport_detalii or "", p.transport_cost])
+            total += p.transport_cost
+        ws.append(["", "", "", "TOTAL:", round(total, 2)])
+        ws[ws.max_row][3].font = Font(bold=True)
+        ws[ws.max_row][4].font = Font(bold=True)
+        return _excel_response(wb, "transport")
+
+    # -----------------------------------------------------------------------
     # CALENDAR VIEW (Feature 2)
     # -----------------------------------------------------------------------
     @app.route("/calendar")
