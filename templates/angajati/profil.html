@@ -9,8 +9,14 @@
     </div>
 </div>
 
-{% set total_ore = pontaje.total and monthly_hours|sum(attribute='value') or 0 %}
-{% set total_zile = pontaje.total %}
+<!-- Alerts -->
+{% if alerts is defined and alerts %}
+<div class="mb-3">
+    {% for a in alerts %}
+    <div class="alert alert-{{ a.tip }} py-2 mb-1"><i class="bi bi-{{ 'exclamation-triangle' if a.tip == 'warning' else 'x-circle' if a.tip == 'danger' else 'info-circle' }}"></i> {{ a.mesaj }}</div>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="row g-3 mb-3">
     <div class="col-md-4">
@@ -29,7 +35,24 @@
     </div>
     <div class="col-md-4">
         <div class="card h-100">
-            <div class="card-header">Contracte</div>
+            <div class="card-header"><i class="bi bi-truck"></i> Transport</div>
+            <div class="card-body">
+                {% if angajat.transport_tip %}
+                <table class="table table-sm mb-0">
+                    <tr><td class="text-muted">Tip</td><td>{{ angajat.transport_tip|replace('_', ' ')|title }}</td></tr>
+                    {% if angajat.transport_cost %}<tr><td class="text-muted">Cost/zi</td><td><strong>{{ angajat.transport_cost }} RON</strong></td></tr>{% endif %}
+                    {% if angajat.transport_distanta %}<tr><td class="text-muted">Distanta</td><td>{{ angajat.transport_distanta }} km</td></tr>{% endif %}
+                    {% if angajat.transport_detalii %}<tr><td class="text-muted">Detalii</td><td>{{ angajat.transport_detalii }}</td></tr>{% endif %}
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">Necompletat. <a href="{{ url_for('edit_angajat', id=angajat.id) }}">Adauga</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">Contracte & Costuri</div>
             <div class="card-body">
                 {% for c in angajat.contracte %}
                 <div class="mb-2 p-2 border rounded">
@@ -37,7 +60,7 @@
                     <small class="text-muted">
                         {% if c.cod_angajat %}Cod: {{ c.cod_angajat }} | {% endif %}
                         {% if c.functie %}Functie: {{ c.functie }} | {% endif %}
-                        {% if c.tarif_orar %}Tarif: {{ c.tarif_orar }} RON/h{% endif %}
+                        {% if c.tarif_orar %}<strong class="text-success">{{ c.tarif_orar }} RON/h</strong>{% else %}<span class="text-warning">Tarif nesetat</span>{% endif %}
                     </small>
                 </div>
                 {% else %}
@@ -46,40 +69,49 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card h-100">
-            <div class="card-header">Statistici</div>
-            <div class="card-body">
-                <div class="stat-card p-2 mb-2"><span class="text-muted">Total Ore (6 luni)</span><div class="number" style="font-size:1.5rem">{{ '%.1f'|format(monthly_hours|sum(attribute='value')) }}</div></div>
-                <div class="stat-card p-2" style="border-left-color:#28a745"><span class="text-muted">Inregistrari Pontaj</span><div class="number" style="font-size:1.5rem;color:#28a745">{{ pontaje.total }}</div></div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <div class="row g-3 mb-3">
-    <div class="col-md-8">
-        <div class="card">
-            <div class="card-header"><i class="bi bi-graph-up"></i> Ore pe Luna</div>
-            <div class="card-body"><canvas id="monthChart" height="180"></canvas></div>
-        </div>
-    </div>
     <div class="col-md-4">
         <div class="card">
-            <div class="card-header"><i class="bi bi-pie-chart"></i> Per Hotel</div>
-            <div class="card-body"><canvas id="hotelChart" height="180"></canvas></div>
+            <div class="card-header">Statistici</div>
+            <div class="card-body">
+                <div class="stat-card p-2 mb-2"><span class="text-muted">Total Ore (6 luni)</span><div class="number" style="font-size:1.5rem">{{ '%.1f'|format(monthly_hours|sum(attribute='value')) }}</div></div>
+                <div class="stat-card p-2 mb-2" style="border-left-color:#28a745"><span class="text-muted">Inregistrari Pontaj</span><div class="number" style="font-size:1.5rem;color:#28a745">{{ pontaje.total }}</div></div>
+                {% set total_h = monthly_hours|sum(attribute='value') %}
+                {% if angajat.contracte and angajat.contracte[0].tarif_orar %}
+                <div class="stat-card p-2 mb-2" style="border-left-color:#ffc107"><span class="text-muted">Cost Total (6 luni)</span><div class="number" style="font-size:1.5rem;color:#ffc107">{{ '%.0f'|format(total_h * angajat.contracte[0].tarif_orar) }} RON</div></div>
+                {% endif %}
+                {% if angajat.transport_cost %}
+                <div class="stat-card p-2" style="border-left-color:#dc3545"><span class="text-muted">Cost Transport (est.)</span><div class="number" style="font-size:1.3rem;color:#dc3545">{{ '%.0f'|format(angajat.transport_cost * pontaje.total) }} RON</div></div>
+                {% endif %}
+            </div>
         </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card"><div class="card-header"><i class="bi bi-graph-up"></i> Ore pe Luna</div><div class="card-body"><canvas id="monthChart" height="200"></canvas></div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-header"><i class="bi bi-pie-chart"></i> Per Hotel</div><div class="card-body"><canvas id="hotelChart" height="200"></canvas></div></div>
     </div>
 </div>
 
 <div class="card">
-    <div class="card-header"><i class="bi bi-clock-history"></i> Istoric Pontaj ({{ pontaje.total }} inregistrari)</div>
+    <div class="card-header"><i class="bi bi-clock-history"></i> Istoric Pontaj ({{ pontaje.total }})</div>
     <div class="card-body p-0">
         <table class="table table-sm table-striped mb-0">
-            <thead><tr><th>Data</th><th>Hotel</th><th>Firma</th><th>Ore</th></tr></thead>
+            <thead><tr><th>Data</th><th>Hotel</th><th>Firma</th><th>Ore</th>{% if angajat.contracte and angajat.contracte[0].tarif_orar %}<th>Cost</th>{% endif %}</tr></thead>
             <tbody>
             {% for p in pontaje.items %}
-            <tr><td>{{ p.data.strftime('%d.%m.%Y') }}</td><td>{{ p.hotel.nume }}</td><td><span class="badge bg-secondary">{{ p.firma_cod or '-' }}</span></td><td>{{ p.ore }}</td></tr>
+            <tr>
+                <td>{{ p.data.strftime('%d.%m.%Y') }}</td>
+                <td>{{ p.hotel.nume }}</td>
+                <td><span class="badge bg-secondary">{{ p.firma_cod or '-' }}</span></td>
+                <td>{{ p.ore }}</td>
+                {% if angajat.contracte and angajat.contracte[0].tarif_orar %}
+                <td>{{ '%.1f'|format(p.ore * angajat.contracte[0].tarif_orar) }} RON</td>
+                {% endif %}
+            </tr>
             {% endfor %}
             </tbody>
         </table>

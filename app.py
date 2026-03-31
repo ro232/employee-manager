@@ -2,6 +2,9 @@ import os
 import io
 import shutil
 import difflib
+import hashlib
+import json
+import calendar as cal_mod
 from datetime import date, datetime, timedelta
 from functools import wraps
 from collections import defaultdict
@@ -16,7 +19,8 @@ from flask_login import (
 from config import Config
 from models import (
     db, User, Angajat, Hotel, Pontaj, Firma, ContractAngajat,
-    AuditLog, Notification, DuplicateExclusion, Planificare
+    AuditLog, Notification, DuplicateExclusion, Planificare,
+    ImportLog, UndoAction
 )
 from import_excel import (
     parse_excel_file, import_entries, create_angajat_from_name,
@@ -128,6 +132,39 @@ def add_notification(mesaj, tip="info", link=None, user_id=None):
             db.session.add(notif)
 
 
+def _snapshot_angajat(angajat):
+    """Create a JSON snapshot of an employee for undo purposes."""
+    return json.dumps({
+        "nume": angajat.nume,
+        "prenume": angajat.prenume,
+        "cnp": angajat.cnp,
+        "adresa": angajat.adresa,
+        "telefon": angajat.telefon,
+        "email": angajat.email,
+        "activ": angajat.activ,
+        "transport_tip": angajat.transport_tip,
+        "transport_cost": angajat.transport_cost,
+        "transport_distanta": angajat.transport_distanta,
+        "transport_detalii": angajat.transport_detalii,
+    }, ensure_ascii=False)
+
+
+def _create_undo(actiune, entitate, entitate_id, snapshot, descriere):
+    """Create an UndoAction record."""
+    user_id = current_user.id if current_user.is_authenticated else None
+    if not user_id:
+        return
+    undo = UndoAction(
+        user_id=user_id,
+        actiune=actiune,
+        entitate=entitate,
+        entitate_id=entitate_id,
+        snapshot=snapshot,
+        descriere=descriere,
+    )
+    db.session.add(undo)
+
+
 def find_similar_names(name, threshold=0.8):
     """Find existing employees with similar names."""
     all_angajati = Angajat.query.filter_by(activ=True).all()
@@ -206,7 +243,7 @@ def build_excel_report(pontaje, filters, grupare):
         if total_cost:
             ws.cell(row=row, column=6, value=round(total_cost, 2)).font = Font(bold=True)
     else:
-        headers_map = {"angajat": "Angajat", "hotel": "Hotel", "firma": "Firma"}
+        headers_map = {"angajat": "Angajat", "hotel": "Hotel", "firma": "Firma", "saptamana": "Saptamana"}
         headers = [headers_map.get(grupare, "Grup"), "Total Ore", "Zile Lucrate", "Cost (RON)"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=row, column=col, value=header)
@@ -259,6 +296,9 @@ def _group_pontaje(pontaje, grupare):
             key = p.angajat.nume_complet
         elif grupare == "hotel":
             key = p.hotel.nume
+        elif grupare == "saptamana":
+            iso_year, iso_week, _ = p.data.isocalendar()
+            key = f"{iso_year}-W{iso_week:02d}"
         else:
             key = p.firma_cod or "N/A"
         if key not in grouped:
@@ -406,6 +446,19 @@ def register_routes(app):
                 "value": round(float(total), 1)
             })
 
+        # Incomplete employee data widget
+        incomplete_angajati = Angajat.query.filter(
+            Angajat.activ == True,
+            db.or_(
+                Angajat.cnp.is_(None),
+                Angajat.cnp == "",
+                Angajat.adresa.is_(None),
+                Angajat.adresa == "",
+                Angajat.telefon.is_(None),
+                Angajat.telefon == "",
+            ),
+        ).order_by(Angajat.nume_complet).all()
+
         return render_template(
             "index.html",
             total_angajati=total_angajati,
@@ -414,6 +467,7 @@ def register_routes(app):
             total_firme=total_firme,
             recent_pontaje=recent_pontaje,
             chart_data=chart_data,
+            incomplete_angajati=incomplete_angajati,
         )
 
     # --- NOTIFICATIONS ---
@@ -441,34 +495,45 @@ def register_routes(app):
             return jsonify({"results": []})
 
         results = []
-        # Search angajati
+        # Search angajati -> link to profil with preview info
         angajati = Angajat.query.filter(
             Angajat.nume_complet.ilike(f"%{q}%")
         ).limit(5).all()
         for a in angajati:
+            total_ore = db.session.query(db.func.sum(Pontaj.ore)).filter_by(angajat_id=a.id).scalar() or 0
+            firme_str = ", ".join(c.firma.cod for c in a.contracte) if a.contracte else "Fara firma"
+            sub = f"{firme_str} | {round(float(total_ore))}h total"
+            if a.transport_tip:
+                sub += f" | {a.transport_tip.replace('_', ' ')}"
             results.append({
                 "type": "angajat", "icon": "person",
                 "text": a.nume_complet,
-                "url": url_for("edit_angajat", id=a.id),
+                "sub": sub,
+                "url": url_for("profil_angajat", id=a.id),
                 "badge": "Activ" if a.activ else "Inactiv"
             })
-        # Search hoteluri
+        # Search hoteluri -> link to hotel dashboard with preview
         hoteluri = Hotel.query.filter(Hotel.nume.ilike(f"%{q}%")).limit(3).all()
         for h in hoteluri:
+            total_ore = db.session.query(db.func.sum(Pontaj.ore)).filter_by(hotel_id=h.id).scalar() or 0
+            ang_count = db.session.query(db.func.count(db.distinct(Pontaj.angajat_id))).filter_by(hotel_id=h.id).scalar() or 0
             results.append({
                 "type": "hotel", "icon": "building",
                 "text": h.nume,
-                "url": url_for("rapoarte") + f"?hotel_id={h.id}",
+                "sub": f"{ang_count} angajati | {round(float(total_ore))}h total",
+                "url": url_for("hotel_dashboard", id=h.id),
             })
         # Search firme
         firme = Firma.query.filter(
             db.or_(Firma.nume.ilike(f"%{q}%"), Firma.cod.ilike(f"%{q}%"))
         ).limit(3).all()
         for f in firme:
+            ang_count = len(f.angajati)
             results.append({
-                "type": "firma", "icon": "building",
+                "type": "firma", "icon": "briefcase",
                 "text": f"{f.cod} - {f.nume}",
-                "url": url_for("edit_firma", id=f.id),
+                "sub": f"{ang_count} contracte",
+                "url": url_for("lista_angajati") + f"?firma_id={f.id}",
             })
 
         return jsonify({"results": results})
@@ -478,11 +543,58 @@ def register_routes(app):
     @login_required
     def lista_angajati():
         show_inactive = request.args.get("inactive", "0") == "1"
+        firma_id = request.args.get("firma_id", "", type=str)
+        hotel_id = request.args.get("hotel_id", "", type=str)
+        q = request.args.get("q", "").strip()
+
         query = Angajat.query
         if not show_inactive:
             query = query.filter_by(activ=True)
+
+        # Filter by firma (through contracts)
+        if firma_id:
+            query = query.filter(
+                Angajat.id.in_(
+                    db.session.query(ContractAngajat.angajat_id).filter(
+                        ContractAngajat.firma_id == int(firma_id)
+                    )
+                )
+            )
+
+        # Filter by hotel (through pontaje - employees who worked at that hotel)
+        if hotel_id:
+            query = query.filter(
+                Angajat.id.in_(
+                    db.session.query(Pontaj.angajat_id).filter(
+                        Pontaj.hotel_id == int(hotel_id)
+                    ).distinct()
+                )
+            )
+
+        # Search text filter
+        if q:
+            query = query.filter(
+                db.or_(
+                    Angajat.nume_complet.ilike(f"%{q}%"),
+                    Angajat.cnp.ilike(f"%{q}%"),
+                    Angajat.telefon.ilike(f"%{q}%"),
+                    Angajat.email.ilike(f"%{q}%"),
+                )
+            )
+
         angajati = query.order_by(Angajat.nume_complet).all()
-        return render_template("angajati/lista.html", angajati=angajati, show_inactive=show_inactive)
+        firme = Firma.query.order_by(Firma.nume).all()
+        hoteluri = Hotel.query.order_by(Hotel.nume).all()
+        return render_template(
+            "angajati/lista.html",
+            angajati=angajati,
+            show_inactive=show_inactive,
+            firme=firme,
+            hoteluri=hoteluri,
+            filter_firma_id=firma_id,
+            filter_hotel_id=hotel_id,
+            filter_q=q,
+        )
 
     @app.route("/angajati/nou", methods=["GET", "POST"])
     @login_required
@@ -501,10 +613,22 @@ def register_routes(app):
                 flash("Numele este obligatoriu.", "danger")
                 return render_template("angajati/form.html", firme=firme)
 
+            # Transport fields
+            transport_tip = request.form.get("transport_tip", "").strip() or None
+            transport_cost_str = request.form.get("transport_cost", "").strip()
+            transport_cost = float(transport_cost_str) if transport_cost_str else None
+            transport_distanta_str = request.form.get("transport_distanta", "").strip()
+            transport_distanta = float(transport_distanta_str) if transport_distanta_str else None
+            transport_detalii = request.form.get("transport_detalii", "").strip() or None
+
             angajat = Angajat(
                 nume=nume, prenume=prenume,
                 nume_complet=f"{nume} {prenume}".strip(),
                 cnp=cnp, adresa=adresa, telefon=telefon, email=email,
+                transport_tip=transport_tip,
+                transport_cost=transport_cost,
+                transport_distanta=transport_distanta,
+                transport_detalii=transport_detalii,
             )
             db.session.add(angajat)
             db.session.flush()
@@ -523,6 +647,13 @@ def register_routes(app):
         angajat = Angajat.query.get_or_404(id)
         firme = Firma.query.order_by(Firma.nume).all()
         if request.method == "POST":
+            # Undo snapshot before change
+            _create_undo(
+                "UPDATE_ANGAJAT", "Angajat", angajat.id,
+                _snapshot_angajat(angajat),
+                f"Editat: {angajat.nume_complet}",
+            )
+
             angajat.nume = request.form.get("nume", "").strip()
             angajat.prenume = request.form.get("prenume", "").strip()
             angajat.nume_complet = f"{angajat.nume} {angajat.prenume}".strip()
@@ -531,6 +662,14 @@ def register_routes(app):
             angajat.telefon = request.form.get("telefon", "").strip() or None
             angajat.email = request.form.get("email", "").strip() or None
             angajat.activ = request.form.get("activ") == "on"
+
+            # Transport fields
+            angajat.transport_tip = request.form.get("transport_tip", "").strip() or None
+            tc = request.form.get("transport_cost", "").strip()
+            angajat.transport_cost = float(tc) if tc else None
+            td = request.form.get("transport_distanta", "").strip()
+            angajat.transport_distanta = float(td) if td else None
+            angajat.transport_detalii = request.form.get("transport_detalii", "").strip() or None
 
             ContractAngajat.query.filter_by(angajat_id=angajat.id).delete()
             _save_contracts(angajat)
@@ -545,6 +684,12 @@ def register_routes(app):
     @require_role("admin", "editor")
     def delete_angajat(id):
         angajat = Angajat.query.get_or_404(id)
+        # Undo snapshot before change
+        _create_undo(
+            "DELETE_ANGAJAT", "Angajat", angajat.id,
+            _snapshot_angajat(angajat),
+            f"Dezactivat: {angajat.nume_complet}",
+        )
         angajat.activ = False
         log_audit("DELETE", "Angajat", angajat.id, f"Dezactivat: {angajat.nume_complet}")
         db.session.commit()
@@ -601,6 +746,43 @@ def register_routes(app):
             .paginate(page=page, per_page=30, error_out=False)
         )
 
+        # --- Alerts ---
+        alerts = []
+
+        # Incomplete data alert
+        if angajat.date_incomplete:
+            alerts.append({
+                "tip": "warning",
+                "mesaj": f"Date incomplete: {', '.join(angajat.date_incomplete)}",
+            })
+
+        # Overtime alert: check if any week in last month exceeds 40h
+        today = date.today()
+        month_ago = today - timedelta(days=30)
+        recent_pontaje_list = Pontaj.query.filter(
+            Pontaj.angajat_id == angajat.id,
+            Pontaj.data >= month_ago,
+            Pontaj.data <= today,
+        ).all()
+        weekly_hours = defaultdict(float)
+        for rp in recent_pontaje_list:
+            iso_year, iso_week, _ = rp.data.isocalendar()
+            weekly_hours[f"{iso_year}-W{iso_week:02d}"] += rp.ore
+        for week_key, hrs in weekly_hours.items():
+            if hrs > 40:
+                alerts.append({
+                    "tip": "danger",
+                    "mesaj": f"Ore suplimentare saptamana {week_key} ({round(hrs, 1)}h)",
+                })
+
+        # Expired contract alert
+        for c in contracte:
+            if c.data_sfarsit and c.data_sfarsit < today:
+                alerts.append({
+                    "tip": "danger",
+                    "mesaj": f"Contract expirat ({c.firma.nume if c.firma else ''} - {c.data_sfarsit.strftime('%d.%m.%Y')})",
+                })
+
         return render_template(
             "angajati/profil.html",
             angajat=angajat,
@@ -608,6 +790,7 @@ def register_routes(app):
             monthly_hours=monthly_hours,
             hotel_data=hotel_data,
             pontaje=pontaje,
+            alerts=alerts,
         )
 
     # -----------------------------------------------------------------------
@@ -649,6 +832,20 @@ def register_routes(app):
         remove_id = int(request.form.get("remove_id"))
         keep = Angajat.query.get_or_404(keep_id)
         remove = Angajat.query.get_or_404(remove_id)
+
+        # Undo snapshot: save both angajat states and pontaj assignments
+        merge_snapshot = json.dumps({
+            "keep": json.loads(_snapshot_angajat(keep)),
+            "remove": json.loads(_snapshot_angajat(remove)),
+            "keep_id": keep_id,
+            "remove_id": remove_id,
+            "remove_pontaj_ids": [p.id for p in Pontaj.query.filter_by(angajat_id=remove.id).all()],
+        }, ensure_ascii=False)
+        _create_undo(
+            "MERGE", "Angajat", keep_id,
+            merge_snapshot,
+            f"Unificat: {remove.nume_complet} -> {keep.nume_complet}",
+        )
 
         # Move pontaje from remove to keep
         Pontaj.query.filter_by(angajat_id=remove.id).update({"angajat_id": keep.id})
@@ -749,6 +946,18 @@ def register_routes(app):
 
             content = file.read()
             filename = file.filename.lower()
+
+            # Import dedup: check SHA256 hash
+            file_hash = hashlib.sha256(content).hexdigest()
+            existing_import = ImportLog.query.filter_by(file_hash=file_hash).first()
+            if existing_import:
+                flash(
+                    f"Acest fisier a fost deja importat pe "
+                    f"{existing_import.created_at.strftime('%d.%m.%Y %H:%M')}",
+                    "warning",
+                )
+                return redirect(url_for("import_page"))
+
             try:
                 if filename.endswith(".zip"):
                     parsed_list = process_zip_file(content)
@@ -767,6 +976,8 @@ def register_routes(app):
 
             # Store parsed data for preview
             session["pending_import"] = []
+            session["pending_import_hash"] = file_hash
+            session["pending_import_filename"] = file.filename
             for p in parsed_list:
                 session["pending_import"].append({
                     "week_period": p["week_period"],
@@ -851,6 +1062,8 @@ def register_routes(app):
     @require_role("admin", "editor")
     def import_confirm():
         pending = session.pop("pending_import", [])
+        import_file_hash = session.pop("pending_import_hash", None)
+        import_filename = session.pop("pending_import_filename", "unknown")
         if not pending:
             flash("Nu exista date de importat.", "info")
             return redirect(url_for("import_page"))
@@ -861,6 +1074,17 @@ def register_routes(app):
             total_stats["imported"] += stats["imported"]
             total_stats["skipped_duplicate"] += stats["skipped_duplicate"]
             total_stats["errors"].extend(stats["errors"])
+
+        # Create ImportLog entry for the imported file
+        if import_file_hash and not ImportLog.query.filter_by(file_hash=import_file_hash).first():
+            total_entries_count = sum(len(p["entries"]) for p in pending)
+            il = ImportLog(
+                filename=import_filename,
+                file_hash=import_file_hash,
+                entries_count=total_entries_count,
+                imported_by=current_user.id if current_user.is_authenticated else None,
+            )
+            db.session.add(il)
 
         log_audit("IMPORT", "Pontaj", None,
                   f"Import: {total_stats['imported']} noi, {total_stats['skipped_duplicate']} actualizate")
@@ -1022,6 +1246,31 @@ def register_routes(app):
         filters = {}
         chart_data = None
 
+        # Preset logic for quick date ranges
+        preset = request.args.get("preset", "")
+        preset_data_start = ""
+        preset_data_end = ""
+        if preset:
+            today = date.today()
+            if preset == "saptamana_curenta":
+                mon = today - timedelta(days=today.weekday())
+                sun = mon + timedelta(days=6)
+                preset_data_start = mon.isoformat()
+                preset_data_end = sun.isoformat()
+            elif preset == "luna_curenta":
+                first_day = today.replace(day=1)
+                last_day = today.replace(
+                    day=cal_mod.monthrange(today.year, today.month)[1]
+                )
+                preset_data_start = first_day.isoformat()
+                preset_data_end = last_day.isoformat()
+            elif preset == "luna_trecuta":
+                first_of_this = today.replace(day=1)
+                last_of_prev = first_of_this - timedelta(days=1)
+                first_of_prev = last_of_prev.replace(day=1)
+                preset_data_start = first_of_prev.isoformat()
+                preset_data_end = last_of_prev.isoformat()
+
         if request.method == "POST":
             grupare = request.form.get("grupare", "detaliat")
             filters = {
@@ -1056,6 +1305,9 @@ def register_routes(app):
             pontaje=pontaje, total_ore=total_ore, total_cost=total_cost,
             grouped=grouped, grupare=grupare, filters=filters,
             chart_data=chart_data,
+            preset=preset,
+            preset_data_start=preset_data_start,
+            preset_data_end=preset_data_end,
         )
 
     @app.route("/rapoarte/export-excel", methods=["POST"])
@@ -1123,7 +1375,7 @@ def register_routes(app):
                           f"{total_cost:.2f}" if total_cost else ""])
         else:
             grouped = _group_pontaje(pontaje, grupare)
-            header_map = {"angajat": "Angajat", "hotel": "Hotel", "firma": "Firma"}
+            header_map = {"angajat": "Angajat", "hotel": "Hotel", "firma": "Firma", "saptamana": "Saptamana"}
             data = [[header_map.get(grupare, "Grup"), "Total Ore", "Zile", "Cost"]]
             for key, vals in sorted(grouped.items()):
                 data.append([key, str(round(vals["ore"], 1)), str(vals["zile"]),
@@ -1317,6 +1569,12 @@ def register_routes(app):
         prev_week = (week_start - timedelta(days=7)).isoformat()
         next_week = (week_start + timedelta(days=7)).isoformat()
 
+        # Hotel color mapping for calendar styling
+        hotel_colors = {
+            hotel.nume: hotel.culoare
+            for hotel in Hotel.query.all()
+        }
+
         return render_template(
             "calendar.html",
             week_start=week_start,
@@ -1326,6 +1584,7 @@ def register_routes(app):
             sorted_angajati=sorted_angajati,
             prev_week=prev_week,
             next_week=next_week,
+            hotel_colors=hotel_colors,
         )
 
     # -----------------------------------------------------------------------
@@ -1392,6 +1651,19 @@ def register_routes(app):
             chart_data=chart_data,
             recent=recent,
         )
+
+    @app.route("/hotel/<int:id>/color", methods=["POST"])
+    @login_required
+    @require_role("admin", "editor")
+    def hotel_color(id):
+        hotel = Hotel.query.get_or_404(id)
+        culoare = request.form.get("culoare", "").strip()
+        if culoare:
+            hotel.culoare = culoare
+            log_audit("UPDATE", "Hotel", hotel.id, f"Culoare hotel {hotel.nume}: {culoare}")
+            db.session.commit()
+            flash(f"Culoarea hotelului {hotel.nume} a fost actualizata.", "success")
+        return redirect(url_for("hotel_dashboard", id=id))
 
     @app.route("/hotel/<int:id>/export-excel")
     @login_required
@@ -1523,6 +1795,86 @@ def register_routes(app):
         db.session.commit()
         flash("Schimb planificat sters.", "info")
         return redirect(url_for("planificare", week_start=week_start))
+
+    # --- UNDO SYSTEM ---
+    @app.route("/undo")
+    @login_required
+    @require_role("admin", "editor")
+    def undo_list():
+        actions = (
+            UndoAction.query
+            .filter_by(undone=False)
+            .order_by(UndoAction.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        return render_template("undo.html", actions=actions)
+
+    @app.route("/undo/<int:id>", methods=["POST"])
+    @login_required
+    @require_role("admin", "editor")
+    def undo_action(id):
+        action = UndoAction.query.get_or_404(id)
+        if action.undone:
+            flash("Aceasta actiune a fost deja anulata.", "warning")
+            return redirect(url_for("undo_list"))
+
+        snapshot = json.loads(action.snapshot)
+
+        if action.actiune in ("DELETE_ANGAJAT", "UPDATE_ANGAJAT"):
+            angajat = Angajat.query.get(action.entitate_id)
+            if angajat:
+                angajat.nume = snapshot.get("nume", angajat.nume)
+                angajat.prenume = snapshot.get("prenume", angajat.prenume)
+                angajat.nume_complet = f"{angajat.nume} {angajat.prenume}".strip()
+                angajat.cnp = snapshot.get("cnp")
+                angajat.adresa = snapshot.get("adresa")
+                angajat.telefon = snapshot.get("telefon")
+                angajat.email = snapshot.get("email")
+                angajat.activ = snapshot.get("activ", True)
+                angajat.transport_tip = snapshot.get("transport_tip")
+                angajat.transport_cost = snapshot.get("transport_cost")
+                angajat.transport_distanta = snapshot.get("transport_distanta")
+                angajat.transport_detalii = snapshot.get("transport_detalii")
+            else:
+                flash("Angajatul nu a fost gasit.", "danger")
+                return redirect(url_for("undo_list"))
+
+        elif action.actiune == "MERGE":
+            remove_id = snapshot.get("remove_id")
+            remove_data = snapshot.get("remove", {})
+            remove_pontaj_ids = snapshot.get("remove_pontaj_ids", [])
+
+            remove_angajat = Angajat.query.get(remove_id)
+            if remove_angajat:
+                # Restore the removed angajat
+                remove_angajat.activ = remove_data.get("activ", True)
+                remove_angajat.nume = remove_data.get("nume", remove_angajat.nume)
+                remove_angajat.prenume = remove_data.get("prenume", remove_angajat.prenume)
+                remove_angajat.nume_complet = f"{remove_angajat.nume} {remove_angajat.prenume}".strip()
+                remove_angajat.cnp = remove_data.get("cnp")
+                remove_angajat.adresa = remove_data.get("adresa")
+                remove_angajat.telefon = remove_data.get("telefon")
+                remove_angajat.email = remove_data.get("email")
+                remove_angajat.transport_tip = remove_data.get("transport_tip")
+                remove_angajat.transport_cost = remove_data.get("transport_cost")
+                remove_angajat.transport_distanta = remove_data.get("transport_distanta")
+                remove_angajat.transport_detalii = remove_data.get("transport_detalii")
+                # Restore pontaje assignments back to the removed angajat
+                if remove_pontaj_ids:
+                    Pontaj.query.filter(Pontaj.id.in_(remove_pontaj_ids)).update(
+                        {"angajat_id": remove_id}, synchronize_session="fetch"
+                    )
+            else:
+                flash("Angajatul sters nu a fost gasit.", "danger")
+                return redirect(url_for("undo_list"))
+
+        action.undone = True
+        log_audit("UNDO", action.entitate, action.entitate_id,
+                  f"Undo: {action.descriere}")
+        db.session.commit()
+        flash(f"Actiune anulata: {action.descriere}", "success")
+        return redirect(url_for("undo_list"))
 
     # --- AUDIT LOG ---
     @app.route("/audit")

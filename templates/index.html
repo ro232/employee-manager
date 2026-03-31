@@ -4,28 +4,16 @@
 <h2 class="mb-4">Dashboard</h2>
 <div class="row g-3 mb-4">
     <div class="col-6 col-md-3">
-        <div class="stat-card p-3">
-            <div class="text-muted small">Angajati Activi</div>
-            <div class="number">{{ total_angajati }}</div>
-        </div>
+        <div class="stat-card p-3"><div class="text-muted small">Angajati Activi</div><div class="number">{{ total_angajati }}</div></div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="stat-card p-3" style="border-left-color: #28a745;">
-            <div class="text-muted small">Inregistrari Pontaj</div>
-            <div class="number" style="color: #28a745;">{{ total_pontaje }}</div>
-        </div>
+        <div class="stat-card p-3" style="border-left-color: #28a745;"><div class="text-muted small">Inregistrari Pontaj</div><div class="number" style="color: #28a745;">{{ total_pontaje }}</div></div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="stat-card p-3" style="border-left-color: #ffc107;">
-            <div class="text-muted small">Hoteluri</div>
-            <div class="number" style="color: #ffc107;">{{ total_hoteluri }}</div>
-        </div>
+        <div class="stat-card p-3" style="border-left-color: #ffc107;"><div class="text-muted small">Hoteluri</div><div class="number" style="color: #ffc107;">{{ total_hoteluri }}</div></div>
     </div>
     <div class="col-6 col-md-3">
-        <div class="stat-card p-3" style="border-left-color: #dc3545;">
-            <div class="text-muted small">Firme</div>
-            <div class="number" style="color: #dc3545;">{{ total_firme }}</div>
-        </div>
+        <div class="stat-card p-3" style="border-left-color: #dc3545;"><div class="text-muted small">Firme</div><div class="number" style="color: #dc3545;">{{ total_firme }}</div></div>
     </div>
 </div>
 
@@ -33,9 +21,7 @@
     <div class="col-md-8">
         <div class="card">
             <div class="card-header"><i class="bi bi-graph-up"></i> Ore pe Luna (ultimele 6 luni)</div>
-            <div class="card-body">
-                <canvas id="oreChart" height="200"></canvas>
-            </div>
+            <div class="card-body"><canvas id="oreChart" height="200"></canvas></div>
         </div>
     </div>
     <div class="col-md-4">
@@ -58,6 +44,30 @@
     </div>
 </div>
 
+<!-- Incomplete data widget -->
+{% if incomplete_angajati is defined and incomplete_angajati %}
+<div class="card mt-3 border-warning">
+    <div class="card-header bg-warning bg-opacity-10"><i class="bi bi-exclamation-triangle text-warning"></i> Angajati cu Date Incomplete ({{ incomplete_angajati|length }})</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Angajat</th><th>Lipseste</th><th></th></tr></thead>
+            <tbody>
+            {% for a in incomplete_angajati[:10] %}
+            <tr>
+                <td><a href="{{ url_for('edit_angajat', id=a.id) }}">{{ a.nume_complet }}</a></td>
+                <td><small class="text-danger">{{ a.date_incomplete|join(', ') }}</small></td>
+                <td><a href="{{ url_for('edit_angajat', id=a.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a></td>
+            </tr>
+            {% endfor %}
+            {% if incomplete_angajati|length > 10 %}
+            <tr><td colspan="3" class="text-center text-muted">... si inca {{ incomplete_angajati|length - 10 }} angajati</td></tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <div class="card mt-3">
     <div class="card-header"><i class="bi bi-clock-history"></i> Ultimele Pontaje</div>
     <div class="card-body p-0">
@@ -68,7 +78,7 @@
             {% for p in recent_pontaje %}
             <tr>
                 <td>{{ p.data.strftime('%d.%m.%Y') }}</td>
-                <td>{{ p.angajat.nume_complet }}</td>
+                <td><a href="{{ url_for('profil_angajat', id=p.angajat.id) }}" class="text-decoration-none">{{ p.angajat.nume_complet }}</a></td>
                 <td>{{ p.hotel.nume }}</td>
                 <td><span class="badge bg-secondary">{{ p.firma_cod or '-' }}</span></td>
                 <td>{{ p.ore }}</td>
@@ -82,7 +92,6 @@
     </div>
 </div>
 {% endblock %}
-
 {% block extra_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
@@ -92,20 +101,9 @@ if (chartData && chartData.length) {
         type: 'bar',
         data: {
             labels: chartData.map(d => d.label),
-            datasets: [{
-                label: 'Ore lucrate',
-                data: chartData.map(d => d.value),
-                backgroundColor: 'rgba(43, 87, 154, 0.7)',
-                borderColor: '#2B579A',
-                borderWidth: 1,
-                borderRadius: 4,
-            }]
+            datasets: [{label: 'Ore lucrate', data: chartData.map(d => d.value), backgroundColor: 'rgba(43, 87, 154, 0.7)', borderColor: '#2B579A', borderWidth: 1, borderRadius: 4}]
         },
-        options: {
-            responsive: true,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: true } }
-        }
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
     });
 }
 </script>

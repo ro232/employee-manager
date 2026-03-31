@@ -4,8 +4,6 @@
 <style>
     .cal-table th, .cal-table td { font-size: 0.8rem; padding: 4px 6px; vertical-align: top; min-width: 120px; }
     .cal-cell { border-radius: 4px; padding: 2px 4px; margin: 1px 0; font-size: 0.75rem; }
-    .cal-cell-hotel { background: rgba(43,87,154,0.1); border-left: 2px solid #2B579A; }
-    [data-bs-theme="dark"] .cal-cell-hotel { background: rgba(74,127,212,0.15); }
     .cal-name { font-weight: 600; white-space: nowrap; position: sticky; left: 0; background: var(--bs-body-bg); z-index: 1; }
     .week-nav a { text-decoration: none; font-size: 1.2rem; }
 </style>
@@ -20,6 +18,15 @@
         <a href="{{ url_for('calendar_view') }}" class="btn btn-sm btn-outline-secondary">Azi</a>
     </div>
 </div>
+
+{% if hotel_colors is defined and hotel_colors %}
+<div class="mb-2">
+    {% for name, color in hotel_colors.items() %}
+    <span class="badge me-1" style="background:{{ color }}">{{ name }}</span>
+    {% endfor %}
+</div>
+{% endif %}
+
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -44,10 +51,11 @@
                 {% for day in days %}
                 <td>
                     {% for entry in grid[ang.id][day] %}
-                    <div class="cal-cell cal-cell-hotel">
+                    {% set hcolor = hotel_colors.get(entry.hotel, '#2B579A') if hotel_colors is defined else '#2B579A' %}
+                    <div class="cal-cell" style="background: {{ hcolor }}15; border-left: 3px solid {{ hcolor }};">
                         <strong>{{ entry.hotel }}</strong><br>
                         {{ entry.ore }}h
-                        {% if entry.firma %}<span class="badge bg-secondary" style="font-size:0.6rem">{{ entry.firma }}</span>{% endif %}
+                        {% if entry.firma %}<span class="badge" style="background:{{ hcolor }};font-size:0.55rem">{{ entry.firma }}</span>{% endif %}
                     </div>
                     {% set total_ore.val = total_ore.val + entry.ore %}
                     {% endfor %}

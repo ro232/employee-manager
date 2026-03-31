@@ -2,6 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from datetime import datetime, date
 from werkzeug.security import generate_password_hash, check_password_hash
+import json
 
 db = SQLAlchemy()
 
@@ -13,9 +14,9 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     nume_complet = db.Column(db.String(200), nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
-    role = db.Column(db.String(20), default="editor")  # admin, editor, viewer
+    role = db.Column(db.String(20), default="editor")
     dark_mode = db.Column(db.Boolean, default=False)
-    hotel_id = db.Column(db.Integer, db.ForeignKey("hoteluri.id"), nullable=True)  # for hotel-specific view
+    hotel_id = db.Column(db.Integer, db.ForeignKey("hoteluri.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     hotel = db.relationship("Hotel", backref="users")
@@ -44,6 +45,7 @@ class Hotel(db.Model):
     __tablename__ = "hoteluri"
     id = db.Column(db.Integer, primary_key=True)
     nume = db.Column(db.String(200), unique=True, nullable=False)
+    culoare = db.Column(db.String(7), default="#2B579A")  # hex color for calendar
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     pontaje = db.relationship("Pontaj", back_populates="hotel")
@@ -62,6 +64,11 @@ class Angajat(db.Model):
     adresa = db.Column(db.String(500), nullable=True)
     telefon = db.Column(db.String(20), nullable=True)
     email = db.Column(db.String(200), nullable=True)
+    # Transport
+    transport_tip = db.Column(db.String(50), nullable=True)  # masina_personala, transport_public, firma, etc.
+    transport_cost = db.Column(db.Float, nullable=True)  # RON/zi
+    transport_distanta = db.Column(db.Float, nullable=True)  # km
+    transport_detalii = db.Column(db.String(300), nullable=True)  # note extra
     activ = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -73,6 +80,20 @@ class Angajat(db.Model):
     @property
     def firme_active(self):
         return [c.firma for c in self.contracte if c.activ]
+
+    @property
+    def date_incomplete(self):
+        """Returns list of missing fields."""
+        missing = []
+        if not self.cnp:
+            missing.append("CNP")
+        if not self.adresa:
+            missing.append("Adresa")
+        if not self.telefon:
+            missing.append("Telefon")
+        if not self.contracte:
+            missing.append("Contract")
+        return missing
 
     def __repr__(self):
         return f"<Angajat {self.nume_complet}>"
@@ -132,8 +153,8 @@ class AuditLog(db.Model):
     __tablename__ = "audit_log"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
-    actiune = db.Column(db.String(50), nullable=False)  # CREATE, UPDATE, DELETE, IMPORT, MERGE
-    entitate = db.Column(db.String(50), nullable=False)  # Angajat, Pontaj, etc.
+    actiune = db.Column(db.String(50), nullable=False)
+    entitate = db.Column(db.String(50), nullable=False)
     entitate_id = db.Column(db.Integer, nullable=True)
     detalii = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -149,7 +170,7 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
     mesaj = db.Column(db.String(500), nullable=False)
-    tip = db.Column(db.String(20), default="info")  # info, warning, success, danger
+    tip = db.Column(db.String(20), default="info")
     citit = db.Column(db.Boolean, default=False)
     link = db.Column(db.String(200), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -158,7 +179,6 @@ class Notification(db.Model):
 
 
 class DuplicateExclusion(db.Model):
-    """Pairs of employees confirmed as NOT duplicates."""
     __tablename__ = "duplicate_exclusions"
     id = db.Column(db.Integer, primary_key=True)
     angajat_id_1 = db.Column(db.Integer, db.ForeignKey("angajati.id"), nullable=False)
@@ -171,7 +191,6 @@ class DuplicateExclusion(db.Model):
 
 
 class Planificare(db.Model):
-    """Future shift planning."""
     __tablename__ = "planificari"
     id = db.Column(db.Integer, primary_key=True)
     angajat_id = db.Column(db.Integer, db.ForeignKey("angajati.id"), nullable=False)
@@ -184,3 +203,32 @@ class Planificare(db.Model):
 
     angajat = db.relationship("Angajat", backref="planificari")
     hotel = db.relationship("Hotel", backref="planificari")
+
+
+class ImportLog(db.Model):
+    """Track imported files to prevent duplicates."""
+    __tablename__ = "import_logs"
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(200), nullable=False)
+    file_hash = db.Column(db.String(64), unique=True, nullable=False)  # SHA256
+    entries_count = db.Column(db.Integer, default=0)
+    imported_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="imports")
+
+
+class UndoAction(db.Model):
+    """Store reversible actions for undo functionality."""
+    __tablename__ = "undo_actions"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    actiune = db.Column(db.String(50), nullable=False)  # DELETE_ANGAJAT, UPDATE_ANGAJAT, DELETE_PONTAJ, IMPORT, MERGE
+    entitate = db.Column(db.String(50), nullable=False)
+    entitate_id = db.Column(db.Integer, nullable=True)
+    snapshot = db.Column(db.Text, nullable=False)  # JSON snapshot of data before change
+    descriere = db.Column(db.String(300), nullable=False)
+    undone = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="undo_actions")

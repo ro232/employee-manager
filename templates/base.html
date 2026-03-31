@@ -81,6 +81,9 @@
             <a class="nav-link {% if 'duplicate' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('detectare_duplicate') }}">
                 <i class="bi bi-people"></i> Duplicate
             </a>
+            <a class="nav-link {% if 'undo' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('undo_list') }}">
+                <i class="bi bi-arrow-counterclockwise"></i> Undo
+            </a>
             {% if current_user.is_admin %}
             <a class="nav-link {% if 'audit' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('audit_log') }}">
                 <i class="bi bi-journal-text"></i> Audit Log
@@ -172,7 +175,7 @@
                     .then(data => {
                         if (data.results.length === 0) { searchResults.classList.remove('show'); return; }
                         searchResults.innerHTML = data.results.map(r =>
-                            `<a href="${r.url}"><i class="bi bi-${r.icon} me-2"></i>${r.text}${r.badge ? ' <span class=\"badge bg-secondary ms-auto\">' + r.badge + '</span>' : ''}</a>`
+                            `<a href="${r.url}"><div class="d-flex align-items-center"><i class="bi bi-${r.icon} me-2 fs-5"></i><div class="flex-grow-1"><div>${r.text}${r.badge ? ' <span class="badge bg-secondary ms-1">' + r.badge + '</span>' : ''}</div>${r.sub ? '<small class="text-muted">' + r.sub + '</small>' : ''}</div></div></a>`
                         ).join('');
                         searchResults.classList.add('show');
                     });

@@ -3,8 +3,50 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2>Angajati</h2>
-    <a href="{{ url_for('angajat_nou') }}" class="btn btn-success"><i class="bi bi-person-plus"></i> Angajat Nou</a>
+    <div>
+        <a href="{{ url_for('lista_angajati', inactive='1') if not show_inactive else url_for('lista_angajati') }}" class="btn btn-sm btn-outline-secondary">
+            {{ 'Ascunde Inactivi' if show_inactive else 'Arata si Inactivi' }}
+        </a>
+        <a href="{{ url_for('angajat_nou') }}" class="btn btn-sm btn-success"><i class="bi bi-person-plus"></i> Angajat Nou</a>
+    </div>
 </div>
+
+<!-- Filters -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <input type="text" name="q" class="form-control form-control-sm" placeholder="Cauta dupa nume..." value="{{ request.args.get('q', '') }}">
+            </div>
+            <div class="col-md-2">
+                <select name="firma_id" class="form-select form-select-sm">
+                    <option value="">Toate firmele</option>
+                    {% for f in firme %}
+                    <option value="{{ f.id }}" {{ 'selected' if request.args.get('firma_id') == f.id|string }}>{{ f.cod }} - {{ f.nume }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select name="hotel_id" class="form-select form-select-sm">
+                    <option value="">Toate hotelurile</option>
+                    {% for h in hoteluri %}
+                    <option value="{{ h.id }}" {{ 'selected' if request.args.get('hotel_id') == h.id|string }}>{{ h.nume }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-funnel"></i></button>
+            </div>
+            {% if request.args.get('q') or request.args.get('firma_id') or request.args.get('hotel_id') %}
+            <div class="col-md-1">
+                <a href="{{ url_for('lista_angajati') }}" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-x"></i></a>
+            </div>
+            {% endif %}
+            {% if show_inactive %}<input type="hidden" name="inactive" value="1">{% endif %}
+        </form>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -15,6 +57,7 @@
                     <th>Nume Complet</th>
                     <th>CNP</th>
                     <th>Telefon</th>
+                    <th>Transport</th>
                     <th>Firme / Contracte</th>
                     <th>Status</th>
                     <th>Actiuni</th>
@@ -22,15 +65,26 @@
             </thead>
             <tbody>
             {% for a in angajati %}
-            <tr class="{{ 'table-secondary' if not a.activ }}">
+            <tr class="{{ 'table-secondary' if not a.activ }}{{ ' table-warning' if a.date_incomplete and a.activ }}">
                 <td>{{ loop.index }}</td>
-                <td><a href="{{ url_for('profil_angajat', id=a.id) }}" class="text-decoration-none"><strong>{{ a.nume_complet }}</strong></a></td>
+                <td>
+                    <a href="{{ url_for('profil_angajat', id=a.id) }}" class="text-decoration-none"><strong>{{ a.nume_complet }}</strong></a>
+                    {% if a.date_incomplete and a.activ %}
+                    <br><small class="text-danger"><i class="bi bi-exclamation-circle"></i> Lipseste: {{ a.date_incomplete|join(', ') }}</small>
+                    {% endif %}
+                </td>
                 <td>{{ a.cnp or '-' }}</td>
                 <td>{{ a.telefon or '-' }}</td>
                 <td>
+                    {% if a.transport_tip %}
+                    <small>{{ a.transport_tip }}{% if a.transport_cost %} - {{ a.transport_cost }} RON/zi{% endif %}</small>
+                    {% else %}
+                    <small class="text-muted">-</small>
+                    {% endif %}
+                </td>
+                <td>
                     {% for c in a.contracte %}
-                    <span class="badge bg-primary">{{ c.firma.cod }} - {{ c.cod_angajat or c.firma.nume }}</span>
-                    {% if c.functie %}<small class="text-muted">({{ c.functie }})</small>{% endif %}
+                    <span class="badge bg-primary">{{ c.firma.cod }}{% if c.tarif_orar %} {{ c.tarif_orar }}RON/h{% endif %}</span>
                     {% else %}
                     <span class="text-muted">-</span>
                     {% endfor %}
@@ -43,23 +97,20 @@
                     {% endif %}
                 </td>
                 <td>
-                    <a href="{{ url_for('edit_angajat', id=a.id) }}" class="btn btn-sm btn-outline-primary" title="Editeaza">
-                        <i class="bi bi-pencil"></i>
-                    </a>
+                    <a href="{{ url_for('edit_angajat', id=a.id) }}" class="btn btn-sm btn-outline-primary" title="Editeaza"><i class="bi bi-pencil"></i></a>
                     <form method="POST" action="{{ url_for('delete_angajat', id=a.id) }}" class="d-inline"
                           onsubmit="return confirm('Dezactivezi angajatul {{ a.nume_complet }}?')">
-                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Dezactiveaza">
-                            <i class="bi bi-person-dash"></i>
-                        </button>
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Dezactiveaza"><i class="bi bi-person-dash"></i></button>
                     </form>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="text-center text-muted p-4">Niciun angajat. Adauga unul sau importa din Excel.</td></tr>
+            <tr><td colspan="8" class="text-center text-muted p-4">Niciun angajat gasit.</td></tr>
             {% endfor %}
             </tbody>
         </table>
         </div>
     </div>
+    <div class="card-footer small text-muted">{{ angajati|length }} angajati</div>
 </div>
 {% endblock %}

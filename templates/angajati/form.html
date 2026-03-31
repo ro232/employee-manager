@@ -5,6 +5,7 @@
 <div class="card">
     <div class="card-body">
         <form method="POST">
+            <h6 class="text-muted mb-2">Date Personale</h6>
             <div class="row g-3">
                 <div class="col-md-4">
                     <label class="form-label">Nume *</label>
@@ -39,37 +40,49 @@
                 </div>
                 {% endif %}
             </div>
+
             <hr>
-            <h5>Contracte</h5>
+            <h6 class="text-muted mb-2"><i class="bi bi-truck"></i> Transport</h6>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Tip Transport</label>
+                    <select name="transport_tip" class="form-select">
+                        <option value="">-- Selecteaza --</option>
+                        {% set tt = angajat.transport_tip if angajat is defined and angajat.transport_tip else '' %}
+                        <option value="masina_personala" {{ 'selected' if tt == 'masina_personala' }}>Masina Personala</option>
+                        <option value="transport_public" {{ 'selected' if tt == 'transport_public' }}>Transport Public</option>
+                        <option value="transport_firma" {{ 'selected' if tt == 'transport_firma' }}>Transport Firma</option>
+                        <option value="bicicleta" {{ 'selected' if tt == 'bicicleta' }}>Bicicleta</option>
+                        <option value="pe_jos" {{ 'selected' if tt == 'pe_jos' }}>Pe Jos</option>
+                        <option value="altul" {{ 'selected' if tt == 'altul' }}>Altul</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Cost (RON/zi)</label>
+                    <input type="number" name="transport_cost" class="form-control" step="0.5" value="{{ angajat.transport_cost if angajat is defined and angajat.transport_cost else '' }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Distanta (km)</label>
+                    <input type="number" name="transport_distanta" class="form-control" step="0.1" value="{{ angajat.transport_distanta if angajat is defined and angajat.transport_distanta else '' }}">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">Detalii Transport</label>
+                    <input type="text" name="transport_detalii" class="form-control" placeholder="Nr. masina, linia de bus, etc." value="{{ angajat.transport_detalii if angajat is defined and angajat.transport_detalii else '' }}">
+                </div>
+            </div>
+
+            <hr>
+            <h6 class="text-muted mb-2">Contracte</h6>
             <div id="contracte-container">
                 {% if angajat is defined and angajat.contracte %}
                     {% for c in angajat.contracte %}
                     <div class="row g-2 mb-2 contract-row align-items-end">
-                        <div class="col-md-2">
-                            <label class="form-label small">Firma</label>
-                            <select name="firma_id" class="form-select form-select-sm">
-                                <option value="">--</option>
-                                {% for f in firme %}<option value="{{ f.id }}" {{ 'selected' if f.id == c.firma_id }}>{{ f.cod }} - {{ f.nume }}</option>{% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small">Nr. Contract</label>
-                            <input type="text" name="numar_contract" class="form-control form-control-sm" value="{{ c.numar_contract or '' }}">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small">Functie</label>
-                            <input type="text" name="functie" class="form-control form-control-sm" value="{{ c.functie or '' }}">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small">Tarif/ora (RON)</label>
-                            <input type="number" name="tarif_orar" class="form-control form-control-sm" step="0.01" value="{{ c.tarif_orar or '' }}">
-                        </div>
-                        <div class="col-md-2">
-                            <span class="badge bg-info">{{ c.cod_angajat or 'Auto' }}</span>
-                        </div>
-                        <div class="col-md-1">
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.contract-row').remove()"><i class="bi bi-trash"></i></button>
-                        </div>
+                        <div class="col-md-2"><label class="form-label small">Firma</label><select name="firma_id" class="form-select form-select-sm"><option value="">--</option>{% for f in firme %}<option value="{{ f.id }}" {{ 'selected' if f.id == c.firma_id }}>{{ f.cod }} - {{ f.nume }}</option>{% endfor %}</select></div>
+                        <div class="col-md-2"><label class="form-label small">Nr. Contract</label><input type="text" name="numar_contract" class="form-control form-control-sm" value="{{ c.numar_contract or '' }}"></div>
+                        <div class="col-md-2"><label class="form-label small">Functie</label><input type="text" name="functie" class="form-control form-control-sm" value="{{ c.functie or '' }}"></div>
+                        <div class="col-md-2"><label class="form-label small">Tarif/ora (RON)</label><input type="number" name="tarif_orar" class="form-control form-control-sm" step="0.01" value="{{ c.tarif_orar or '' }}"></div>
+                        <div class="col-md-2"><span class="badge bg-info">{{ c.cod_angajat or 'Auto' }}</span></div>
+                        <div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.contract-row').remove()"><i class="bi bi-trash"></i></button></div>
                     </div>
                     {% endfor %}
                 {% else %}

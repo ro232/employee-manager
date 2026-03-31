@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Undo - Istoric Actiuni{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-arrow-counterclockwise"></i> Undo - Istoric Actiuni</h2>
+<p class="text-muted">Ultimele actiuni reversibile. Click "Anuleaza" pentru a reveni la starea anterioara.</p>
+
+{% if actions %}
+{% for a in actions %}
+<div class="card mb-2 {{ 'opacity-50' if a.undone }}">
+    <div class="card-body py-2 d-flex align-items-center justify-content-between">
+        <div>
+            <span class="badge bg-{{ 'danger' if 'DELETE' in a.actiune else 'warning' if 'MERGE' in a.actiune else 'info' }} me-2">{{ a.actiune }}</span>
+            <strong>{{ a.descriere }}</strong>
+            <br><small class="text-muted">{{ a.created_at.strftime('%d.%m.%Y %H:%M') }} - {{ a.user.username if a.user else 'System' }}</small>
+        </div>
+        <div>
+            {% if not a.undone %}
+            <form method="POST" action="{{ url_for('undo_action', id=a.id) }}" class="d-inline"
+                  onsubmit="return confirm('Anulezi aceasta actiune?')">
+                <button class="btn btn-sm btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Anuleaza</button>
+            </form>
+            {% else %}
+            <span class="badge bg-secondary">Anulat</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="alert alert-info"><i class="bi bi-info-circle"></i> Nicio actiune reversibila recenta.</div>
+{% endif %}
+{% endblock %}
