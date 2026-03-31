@@ -64,6 +64,7 @@ class Angajat(db.Model):
     adresa = db.Column(db.String(500), nullable=True)
     telefon = db.Column(db.String(20), nullable=True)
     email = db.Column(db.String(200), nullable=True)
+    nationalitate = db.Column(db.String(50), nullable=True)  # Romana, Moldoveana, etc.
     # Transport
     transport_tip = db.Column(db.String(50), nullable=True)  # masina_personala, transport_public, firma, etc.
     transport_cost = db.Column(db.Float, nullable=True)  # RON/zi
@@ -134,6 +135,8 @@ class Pontaj(db.Model):
     firma_cod = db.Column(db.String(10), nullable=True)
     saptamana = db.Column(db.String(20), nullable=True)
     fisier_sursa = db.Column(db.String(200), nullable=True)
+    transport_cost = db.Column(db.Float, nullable=True)  # RON per day (Uber, taxi, etc.)
+    transport_detalii = db.Column(db.String(200), nullable=True)  # "Uber", "Taxi", "Metrou", etc.
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     angajat = db.relationship("Angajat", back_populates="pontaje")
@@ -203,6 +206,20 @@ class Planificare(db.Model):
 
     angajat = db.relationship("Angajat", backref="planificari")
     hotel = db.relationship("Hotel", backref="planificari")
+
+
+class DocumentAngajat(db.Model):
+    """Files attached to employee profile (ID, contract scans, etc.)."""
+    __tablename__ = "documente_angajat"
+    id = db.Column(db.Integer, primary_key=True)
+    angajat_id = db.Column(db.Integer, db.ForeignKey("angajati.id"), nullable=False)
+    nume_fisier = db.Column(db.String(200), nullable=False)
+    tip = db.Column(db.String(50), nullable=True)  # CI, Contract, Diploma, Altul
+    cale_fisier = db.Column(db.String(500), nullable=False)
+    marime = db.Column(db.Integer, nullable=True)  # bytes
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    angajat = db.relationship("Angajat", backref="documente")
 
 
 class ImportLog(db.Model):

@@ -28,6 +28,7 @@
                     <tr><td class="text-muted">Adresa</td><td>{{ angajat.adresa or '-' }}</td></tr>
                     <tr><td class="text-muted">Telefon</td><td>{{ angajat.telefon or '-' }}</td></tr>
                     <tr><td class="text-muted">Email</td><td>{{ angajat.email or '-' }}</td></tr>
+                    <tr><td class="text-muted">Nationalitate</td><td>{{ angajat.nationalitate or '-' }}</td></tr>
                     <tr><td class="text-muted">Status</td><td><span class="badge bg-{{ 'success' if angajat.activ else 'secondary' }}">{{ 'Activ' if angajat.activ else 'Inactiv' }}</span></td></tr>
                 </table>
             </div>
@@ -93,6 +94,56 @@
     </div>
     <div class="col-md-3">
         <div class="card"><div class="card-header"><i class="bi bi-pie-chart"></i> Per Hotel</div><div class="card-body"><canvas id="hotelChart" height="200"></canvas></div></div>
+    </div>
+</div>
+
+<!-- DOCUMENTE -->
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between">
+        <span><i class="bi bi-folder2-open"></i> Documente Angajat</span>
+        <button class="btn btn-sm btn-success" data-bs-toggle="collapse" data-bs-target="#uploadForm"><i class="bi bi-plus"></i> Adauga</button>
+    </div>
+    <div class="collapse mb-0" id="uploadForm">
+        <div class="card-body border-bottom py-2">
+            <form method="POST" action="{{ url_for('upload_document', id=angajat.id) }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small">Tip Document</label>
+                    <select name="tip" class="form-select form-select-sm">
+                        {% for t in doc_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                        <option value="Altul">Altul</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small">Fisier (PDF, JPG, PNG, DOC)</label>
+                    <input type="file" name="file" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" required>
+                </div>
+                <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-upload"></i> Upload</button></div>
+            </form>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if angajat.documente %}
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Tip</th><th>Fisier</th><th>Marime</th><th>Data</th><th></th></tr></thead>
+            <tbody>
+            {% for d in angajat.documente %}
+            <tr>
+                <td><span class="badge bg-{{ 'primary' if 'Contract' in d.tip else 'success' if 'Buletin' in d.tip or 'CI' in d.tip else 'warning' if 'Cazier' in d.tip else 'info' }}">{{ d.tip }}</span></td>
+                <td><a href="{{ url_for('download_document', doc_id=d.id) }}"><i class="bi bi-download"></i> {{ d.nume_fisier }}</a></td>
+                <td><small>{{ '%.1f'|format(d.marime / 1024) }} KB</small></td>
+                <td><small>{{ d.created_at.strftime('%d.%m.%Y') }}</small></td>
+                <td>
+                    <form method="POST" action="{{ url_for('delete_document', doc_id=d.id) }}" class="d-inline" onsubmit="return confirm('Stergi documentul?')">
+                        <button class="btn btn-sm btn-outline-danger py-0"><i class="bi bi-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="p-3 text-muted mb-0">Niciun document uploadat.</p>
+        {% endif %}
     </div>
 </div>
 

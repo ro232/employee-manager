@@ -20,8 +20,9 @@ from config import Config
 from models import (
     db, User, Angajat, Hotel, Pontaj, Firma, ContractAngajat,
     AuditLog, Notification, DuplicateExclusion, Planificare,
-    ImportLog, UndoAction
+    ImportLog, UndoAction, DocumentAngajat
 )
+from werkzeug.utils import secure_filename
 from import_excel import (
     parse_excel_file, import_entries, create_angajat_from_name,
     process_zip_file, find_angajat_by_name
@@ -608,6 +609,7 @@ def register_routes(app):
             adresa = request.form.get("adresa", "").strip() or None
             telefon = request.form.get("telefon", "").strip() or None
             email = request.form.get("email", "").strip() or None
+            nationalitate = request.form.get("nationalitate", "").strip() or None
 
             if not nume:
                 flash("Numele este obligatoriu.", "danger")
@@ -625,7 +627,7 @@ def register_routes(app):
                 nume=nume, prenume=prenume,
                 nume_complet=f"{nume} {prenume}".strip(),
                 cnp=cnp, adresa=adresa, telefon=telefon, email=email,
-                transport_tip=transport_tip,
+                nationalitate=nationalitate, transport_tip=transport_tip,
                 transport_cost=transport_cost,
                 transport_distanta=transport_distanta,
                 transport_detalii=transport_detalii,
@@ -661,6 +663,7 @@ def register_routes(app):
             angajat.adresa = request.form.get("adresa", "").strip() or None
             angajat.telefon = request.form.get("telefon", "").strip() or None
             angajat.email = request.form.get("email", "").strip() or None
+            angajat.nationalitate = request.form.get("nationalitate", "").strip() or None
             angajat.activ = request.form.get("activ") == "on"
 
             # Transport fields
@@ -783,6 +786,20 @@ def register_routes(app):
                     "mesaj": f"Contract expirat ({c.firma.nume if c.firma else ''} - {c.data_sfarsit.strftime('%d.%m.%Y')})",
                 })
 
+        # Check missing documents
+        doc_types_required = [
+            "Buletin/CI", "Cazier Judiciar", "Contract de Munca",
+            "Adeverinta Medicala", "Adeverinta Scoala", "CV",
+            "Fisa Postului", "GDPR Consimtamant",
+        ]
+        existing_docs = {d.tip for d in angajat.documente}
+        missing_docs = [t for t in doc_types_required if t not in existing_docs]
+        if missing_docs:
+            alerts.append({
+                "tip": "info",
+                "mesaj": f"Documente lipsa: {', '.join(missing_docs[:4])}{'...' if len(missing_docs) > 4 else ''}",
+            })
+
         return render_template(
             "angajati/profil.html",
             angajat=angajat,
@@ -791,7 +808,72 @@ def register_routes(app):
             hotel_data=hotel_data,
             pontaje=pontaje,
             alerts=alerts,
+            doc_types=doc_types_required,
         )
+
+    # --- DOCUMENT UPLOAD/DOWNLOAD ---
+    ALLOWED_DOC_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "doc", "docx"}
+
+    @app.route("/angajati/<int:id>/documente/upload", methods=["POST"])
+    @login_required
+    @require_role("admin", "editor")
+    def upload_document(id):
+        angajat = Angajat.query.get_or_404(id)
+        file = request.files.get("file")
+        tip = request.form.get("tip", "Altul")
+
+        if not file or not file.filename:
+            flash("Selecteaza un fisier.", "danger")
+            return redirect(url_for("profil_angajat", id=id))
+
+        filename = secure_filename(file.filename)
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext not in ALLOWED_DOC_EXTENSIONS:
+            flash(f"Format invalid. Acceptam: {', '.join(ALLOWED_DOC_EXTENSIONS)}", "danger")
+            return redirect(url_for("profil_angajat", id=id))
+
+        # Save file
+        doc_dir = os.path.join(app.config["UPLOAD_FOLDER"], "documente", str(id))
+        os.makedirs(doc_dir, exist_ok=True)
+        safe_name = f"{tip.replace(' ', '_').replace('/', '_')}_{datetime.now().strftime('%Y%m%d%H%M')}_{filename}"
+        filepath = os.path.join(doc_dir, safe_name)
+        file.save(filepath)
+
+        doc = DocumentAngajat(
+            angajat_id=id,
+            nume_fisier=filename,
+            tip=tip,
+            cale_fisier=filepath,
+            marime=os.path.getsize(filepath),
+        )
+        db.session.add(doc)
+        log_audit("UPLOAD", "Document", id, f"Upload: {tip} - {filename}")
+        db.session.commit()
+        flash(f"Document '{tip}' uploadat.", "success")
+        return redirect(url_for("profil_angajat", id=id))
+
+    @app.route("/documente/<int:doc_id>/download")
+    @login_required
+    def download_document(doc_id):
+        doc = DocumentAngajat.query.get_or_404(doc_id)
+        if os.path.exists(doc.cale_fisier):
+            return send_file(doc.cale_fisier, as_attachment=True, download_name=doc.nume_fisier)
+        flash("Fisierul nu a fost gasit.", "danger")
+        return redirect(url_for("profil_angajat", id=doc.angajat_id))
+
+    @app.route("/documente/<int:doc_id>/delete", methods=["POST"])
+    @login_required
+    @require_role("admin")
+    def delete_document(doc_id):
+        doc = DocumentAngajat.query.get_or_404(doc_id)
+        ang_id = doc.angajat_id
+        if os.path.exists(doc.cale_fisier):
+            os.remove(doc.cale_fisier)
+        db.session.delete(doc)
+        log_audit("DELETE", "Document", ang_id, f"Sters: {doc.tip} - {doc.nume_fisier}")
+        db.session.commit()
+        flash("Document sters.", "warning")
+        return redirect(url_for("profil_angajat", id=ang_id))
 
     # -----------------------------------------------------------------------
     # DUPLICATE DETECTION & MERGE (updated with "Keep Both" - Feature 1)
@@ -1213,6 +1295,9 @@ def register_routes(app):
                 return render_template("pontaj/form.html",
                                        angajati=angajati, hoteluri=hoteluri, firme=firme)
 
+            transport_cost = request.form.get("transport_cost", "").strip()
+            transport_det = request.form.get("transport_detalii", "").strip()
+
             pontaj = Pontaj(
                 angajat_id=int(angajat_id),
                 hotel_id=int(hotel_id),
@@ -1220,6 +1305,8 @@ def register_routes(app):
                 ore=float(ore),
                 firma_cod=firma_cod or None,
                 fisier_sursa="manual",
+                transport_cost=float(transport_cost) if transport_cost else None,
+                transport_detalii=transport_det or None,
             )
             db.session.add(pontaj)
             log_audit("CREATE", "Pontaj", None, f"Pontaj manual: {data_str}")
@@ -1522,6 +1609,121 @@ def register_routes(app):
             result=result,
             filters=filters,
         )
+
+    # -----------------------------------------------------------------------
+    # RAPORT FIRMA / HOTEL (procent distributie)
+    # -----------------------------------------------------------------------
+    @app.route("/rapoarte/firma-hotel", methods=["GET", "POST"])
+    @login_required
+    def raport_firma_hotel():
+        hoteluri = Hotel.query.order_by(Hotel.nume).all()
+        firme = Firma.query.order_by(Firma.nume).all()
+        result = None
+        filters = {}
+
+        if request.method == "POST":
+            data_start = request.form.get("data_start", "")
+            data_end = request.form.get("data_end", "")
+            filters = {"data_start": data_start, "data_end": data_end}
+
+            q = db.session.query(
+                Hotel.nume.label("hotel"),
+                Pontaj.firma_cod.label("firma"),
+                db.func.sum(Pontaj.ore).label("ore"),
+                db.func.count(Pontaj.id).label("zile"),
+            ).join(Hotel).group_by(Hotel.nume, Pontaj.firma_cod)
+
+            if data_start:
+                q = q.filter(Pontaj.data >= date.fromisoformat(data_start))
+            if data_end:
+                q = q.filter(Pontaj.data <= date.fromisoformat(data_end))
+
+            rows = q.all()
+
+            # Build structure: {hotel: {firma: {ore, zile}, total_ore}}
+            hotels_data = {}
+            for r in rows:
+                h = r.hotel
+                f = r.firma or "N/A"
+                if h not in hotels_data:
+                    hotels_data[h] = {"firme": {}, "total_ore": 0, "total_zile": 0}
+                hotels_data[h]["firme"][f] = {"ore": round(float(r.ore), 1), "zile": r.zile}
+                hotels_data[h]["total_ore"] += float(r.ore)
+                hotels_data[h]["total_zile"] += r.zile
+
+            # Calculate percentages
+            for h, data in hotels_data.items():
+                for f, vals in data["firme"].items():
+                    vals["procent"] = round(vals["ore"] / data["total_ore"] * 100, 1) if data["total_ore"] else 0
+                data["total_ore"] = round(data["total_ore"], 1)
+
+            # Chart data per hotel
+            chart_data = []
+            all_firme = sorted(set(f for d in hotels_data.values() for f in d["firme"]))
+            firma_colors = {"D": "#2B579A", "E": "#28a745", "None": "#ffc107", "N/A": "#6c757d"}
+            for f in all_firme:
+                values = [hotels_data[h]["firme"].get(f, {}).get("ore", 0) for h in sorted(hotels_data)]
+                chart_data.append({
+                    "label": f,
+                    "data": values,
+                    "color": firma_colors.get(f, "#17a2b8"),
+                })
+
+            result = {
+                "hotels_data": dict(sorted(hotels_data.items())),
+                "chart_labels": sorted(hotels_data.keys()),
+                "chart_data": chart_data,
+                "all_firme": all_firme,
+            }
+
+        return render_template("rapoarte/firma_hotel.html",
+                               hoteluri=hoteluri, firme=firme, result=result, filters=filters)
+
+    # -----------------------------------------------------------------------
+    # RAPORT TRANSPORT (cost transport per perioada)
+    # -----------------------------------------------------------------------
+    @app.route("/rapoarte/transport", methods=["GET", "POST"])
+    @login_required
+    def raport_transport():
+        result = None
+        filters = {}
+
+        if request.method == "POST":
+            data_start = request.form.get("data_start", "")
+            data_end = request.form.get("data_end", "")
+            filters = {"data_start": data_start, "data_end": data_end}
+
+            q = Pontaj.query.join(Angajat).filter(Pontaj.transport_cost.isnot(None))
+            if data_start:
+                q = q.filter(Pontaj.data >= date.fromisoformat(data_start))
+            if data_end:
+                q = q.filter(Pontaj.data <= date.fromisoformat(data_end))
+
+            pontaje = q.order_by(Pontaj.data.desc()).all()
+
+            # Group by employee
+            by_employee = {}
+            total_cost = 0
+            for p in pontaje:
+                name = p.angajat.nume_complet
+                if name not in by_employee:
+                    by_employee[name] = {"entries": [], "total": 0, "angajat_id": p.angajat.id}
+                by_employee[name]["entries"].append({
+                    "data": p.data.strftime("%d.%m.%Y"),
+                    "hotel": p.hotel.nume,
+                    "cost": p.transport_cost,
+                    "detalii": p.transport_detalii or "",
+                })
+                by_employee[name]["total"] += p.transport_cost
+                total_cost += p.transport_cost
+
+            result = {
+                "by_employee": dict(sorted(by_employee.items())),
+                "total_cost": round(total_cost, 2),
+                "total_entries": len(pontaje),
+            }
+
+        return render_template("rapoarte/transport.html", result=result, filters=filters)
 
     # -----------------------------------------------------------------------
     # CALENDAR VIEW (Feature 2)

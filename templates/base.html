@@ -77,6 +77,12 @@
             <a class="nav-link {% if 'overtime_report' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('overtime_report') }}">
                 <i class="bi bi-exclamation-diamond"></i> Ore Suplimentare
             </a>
+            <a class="nav-link {% if 'firma_hotel' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('raport_firma_hotel') }}">
+                <i class="bi bi-pie-chart"></i> Firma / Hotel
+            </a>
+            <a class="nav-link {% if 'raport_transport' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('raport_transport') }}">
+                <i class="bi bi-truck"></i> Transport
+            </a>
             <div class="sidebar-section">Admin</div>
             <a class="nav-link {% if 'duplicate' in request.endpoint|default('') %}active{% endif %}" href="{{ url_for('detectare_duplicate') }}">
                 <i class="bi bi-people"></i> Duplicate

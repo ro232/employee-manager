@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Raport Firma / Hotel{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-pie-chart"></i> Distributie Firme per Hotel</h2>
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="POST" class="row g-2 align-items-end">
+            <div class="col-md-3"><label class="form-label small">De la</label><input type="date" name="data_start" class="form-control form-control-sm" value="{{ filters.data_start|default('') }}" required></div>
+            <div class="col-md-3"><label class="form-label small">Pana la</label><input type="date" name="data_end" class="form-control form-control-sm" value="{{ filters.data_end|default('') }}" required></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Genereaza</button></div>
+        </form>
+    </div>
+</div>
+
+{% if result %}
+<div class="card mb-3">
+    <div class="card-header">Distributie vizuala</div>
+    <div class="card-body"><canvas id="fhChart" height="200"></canvas></div>
+</div>
+
+{% for hotel, data in result.hotels_data.items() %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between">
+        <strong><i class="bi bi-building"></i> {{ hotel }}</strong>
+        <span>Total: {{ data.total_ore }}h | {{ data.total_zile }} zile</span>
+    </div>
+    <div class="card-body p-0">
+        <!-- Progress bar -->
+        <div class="d-flex" style="height: 30px;">
+            {% for firma, vals in data.firme.items() %}
+            {% set colors = {"D": "#2B579A", "E": "#28a745", "None": "#ffc107", "N/A": "#6c757d"} %}
+            <div style="width:{{ vals.procent }}%; background:{{ colors.get(firma, '#17a2b8') }}; color:white; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:bold;">
+                {{ firma }} {{ vals.procent }}%
+            </div>
+            {% endfor %}
+        </div>
+        <table class="table table-sm mb-0">
+            <thead><tr><th>Firma</th><th>Ore</th><th>Zile</th><th>Procent</th></tr></thead>
+            <tbody>
+            {% for firma, vals in data.firme.items() %}
+            <tr>
+                <td><span class="badge" style="background:{{ colors.get(firma, '#17a2b8') }}">{{ firma }}</span></td>
+                <td>{{ vals.ore }}h</td>
+                <td>{{ vals.zile }}</td>
+                <td><strong>{{ vals.procent }}%</strong></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if result %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+const cd = {{ result.chart_data|tojson }};
+new Chart(document.getElementById('fhChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ result.chart_labels|tojson }},
+        datasets: cd.map(d => ({label: d.label, data: d.data, backgroundColor: d.color}))
+    },
+    options: { responsive:true, scales: { x: {stacked:true}, y: {stacked:true, beginAtZero:true} } }
+});
+</script>
+{% endif %}
+{% endblock %}

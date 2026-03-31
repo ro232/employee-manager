@@ -27,9 +27,13 @@
                     <label class="form-label">Telefon</label>
                     <input type="text" name="telefon" class="form-control" value="{{ angajat.telefon if angajat is defined and angajat.telefon else '' }}">
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Email</label>
                     <input type="email" name="email" class="form-control" value="{{ angajat.email if angajat is defined and angajat.email else '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Nationalitate</label>
+                    <input type="text" name="nationalitate" class="form-control" placeholder="Romana, Moldoveana..." value="{{ angajat.nationalitate if angajat is defined and angajat.nationalitate else '' }}">
                 </div>
                 {% if angajat is defined %}
                 <div class="col-md-3">

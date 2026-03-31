@@ -2,38 +2,50 @@
 {% block title %}Pontaj Manual{% endblock %}
 {% block content %}
 <h2 class="mb-3"><i class="bi bi-plus-circle"></i> Pontaj Manual</h2>
-<div class="card" style="max-width: 600px;">
+<div class="card" style="max-width: 700px;">
     <div class="card-body">
         <form method="POST">
             <div class="mb-3">
                 <label class="form-label">Angajat *</label>
                 <select name="angajat_id" class="form-select" required>
                     <option value="">-- Selecteaza --</option>
-                    {% for a in angajati %}<option value="{{ a.id }}">{{ a.nume_complet }}</option>{% endfor %}
-                </select>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Hotel / Locatie *</label>
-                <select name="hotel_id" class="form-select" required>
-                    <option value="">-- Selecteaza --</option>
-                    {% for h in hoteluri %}<option value="{{ h.id }}">{{ h.nume }}</option>{% endfor %}
+                    {% for a in angajati %}
+                    <option value="{{ a.id }}">{{ a.nume_complet }}{% if a.contracte %} ({{ a.contracte[0].firma.cod }}{% if a.contracte[0].tarif_orar %} - {{ a.contracte[0].tarif_orar }} RON/h{% endif %}){% endif %}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-6">
+                    <label class="form-label">Hotel / Locatie *</label>
+                    <select name="hotel_id" class="form-select" required>
+                        <option value="">-- Selecteaza --</option>
+                        {% for h in hoteluri %}<option value="{{ h.id }}">{{ h.nume }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
                     <label class="form-label">Data *</label>
                     <input type="date" name="data" class="form-control" required>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label">Ore *</label>
                     <input type="number" name="ore" class="form-control" step="0.5" min="0.5" max="24" required>
                 </div>
+            </div>
+            <div class="row g-3 mt-1">
                 <div class="col-md-4">
                     <label class="form-label">Firma</label>
                     <select name="firma_cod" class="form-select">
                         <option value="">--</option>
                         {% for f in firme %}<option value="{{ f.cod }}">{{ f.cod }} - {{ f.nume }}</option>{% endfor %}
                     </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label"><i class="bi bi-truck"></i> Transport (RON)</label>
+                    <input type="number" name="transport_cost" class="form-control" step="0.5" placeholder="0 daca fara">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Tip Transport</label>
+                    <input type="text" name="transport_detalii" class="form-control" placeholder="Uber, Taxi, Bus, etc.">
                 </div>
             </div>
             <div class="mt-3">

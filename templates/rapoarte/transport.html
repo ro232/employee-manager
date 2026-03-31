@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Raport Transport{% endblock %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-truck"></i> Raport Costuri Transport</h2>
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="POST" class="row g-2 align-items-end">
+            <div class="col-md-3"><label class="form-label small">De la</label><input type="date" name="data_start" class="form-control form-control-sm" value="{{ filters.data_start|default('') }}" required></div>
+            <div class="col-md-3"><label class="form-label small">Pana la</label><input type="date" name="data_end" class="form-control form-control-sm" value="{{ filters.data_end|default('') }}" required></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search"></i> Genereaza</button></div>
+        </form>
+    </div>
+</div>
+
+{% if result %}
+<div class="row g-3 mb-3">
+    <div class="col-md-4"><div class="stat-card p-3"><div class="text-muted small">Cost Total Transport</div><div class="number">{{ '%.2f'|format(result.total_cost) }} RON</div></div></div>
+    <div class="col-md-4"><div class="stat-card p-3" style="border-left-color:#28a745"><div class="text-muted small">Inregistrari cu Transport</div><div class="number" style="color:#28a745">{{ result.total_entries }}</div></div></div>
+    <div class="col-md-4"><div class="stat-card p-3" style="border-left-color:#ffc107"><div class="text-muted small">Angajati</div><div class="number" style="color:#ffc107">{{ result.by_employee|length }}</div></div></div>
+</div>
+
+{% for name, data in result.by_employee.items() %}
+<div class="card mb-2">
+    <div class="card-header d-flex justify-content-between py-2">
+        <strong><a href="{{ url_for('profil_angajat', id=data.angajat_id) }}" class="text-decoration-none">{{ name }}</a></strong>
+        <span class="badge bg-danger fs-6">{{ '%.2f'|format(data.total) }} RON</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <tbody>
+            {% for e in data.entries %}
+            <tr><td>{{ e.data }}</td><td>{{ e.hotel }}</td><td>{{ e.detalii }}</td><td class="fw-bold">{{ e.cost }} RON</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endfor %}
+
+{% if not result.by_employee %}
+<div class="alert alert-info">Nicio inregistrare cu transport in perioada selectata.</div>
+{% endif %}
+{% endif %}
+{% endblock %}
